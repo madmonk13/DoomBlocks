@@ -1,0 +1,1137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>DoomBlocks — 3D Block Level Editor</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+  :root {
+    --bg:#1a1a1e; --panel:#242429; --border:#3a3a42; --text:#d8d8dc;
+    --dim:#8a8a92; --accent:#e05038; --sel:#ffd24a;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--bg); color:var(--text); font:13px/1.4 -apple-system,'Helvetica Neue',sans-serif; overflow:hidden; height:100vh; display:flex; flex-direction:column; }
+  #toolbar { display:flex; align-items:center; gap:6px; padding:8px 10px; background:var(--panel); border-bottom:1px solid var(--border); flex-wrap:wrap; }
+  #toolbar .logo { font-weight:700; color:var(--accent); margin-right:8px; letter-spacing:1px; }
+  button, select, input { background:#2e2e35; color:var(--text); border:1px solid var(--border); border-radius:5px; padding:5px 10px; font:inherit; cursor:pointer; }
+  button:hover { background:#3a3a44; }
+  button.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .sep { width:1px; height:22px; background:var(--border); margin:0 4px; }
+  #main { flex:1; display:flex; min-height:0; }
+  #canvasWrap { flex:1; position:relative; }
+  canvas { display:block; }
+  #sidebar { width:230px; background:var(--panel); border-left:1px solid var(--border); padding:12px; overflow-y:auto; }
+  #sidebar h3 { font-size:11px; text-transform:uppercase; color:var(--dim); margin:14px 0 6px; letter-spacing:.5px; }
+  #sidebar h3:first-child { margin-top:0; }
+  .tool { display:flex; align-items:center; gap:8px; width:100%; margin-bottom:4px; text-align:left; padding:6px 8px; }
+  .chip { width:14px; height:14px; border-radius:3px; flex:0 0 14px; border:1px solid rgba(255,255,255,.25); }
+  #status { padding:4px 10px; background:var(--panel); border-top:1px solid var(--border); color:var(--dim); font-size:12px; display:flex; gap:16px; }
+  #help { position:absolute; top:10px; left:10px; background:rgba(30,30,35,.92); border:1px solid var(--border); border-radius:8px; padding:12px 26px 12px 16px; font-size:12px; color:var(--dim); max-width:360px; pointer-events:none; }
+  #help b { color:var(--text); }
+  #help .k { display:inline-block; background:#333; border-radius:3px; padding:0 5px; color:var(--text); font-family:monospace; }
+  #helpClose { pointer-events:auto; position:absolute; top:5px; right:5px; padding:0 6px; font-size:11px; background:transparent; border:none; color:var(--dim); }
+  #helpClose:hover { color:var(--text); }
+  #noGL { position:absolute; inset:0; display:none; align-items:center; justify-content:center; color:var(--dim); text-align:center; padding:40px; }
+  #thingInfo { position:absolute; bottom:12px; left:12px; background:rgba(30,30,35,.94); border:1px solid var(--border); border-radius:8px; padding:10px 12px; font-size:12px; min-width:200px; }
+  #thingInfo b { color:var(--sel); }
+  #thingInfo span { color:var(--dim); }
+  #thingInfo button { margin-top:8px; margin-right:4px; padding:3px 9px; font-size:12px; }
+  .hidden { display:none !important; }
+  .row { display:flex; align-items:center; gap:6px; margin-bottom:6px; }
+  .row label { flex:0 0 60px; color:var(--dim); font-size:12px; }
+  .row input, .row select { flex:1; min-width:0; padding:4px 6px; }
+</style>
+</head>
+<body>
+<div id="toolbar">
+  <span class="logo">DOOMBLOCKS</span>
+  <button id="btnNew">New</button>
+  <button id="btnSave">Save Project</button>
+  <button id="btnLoad">Open Project</button>
+  <input type="file" id="fileInput" accept=".json" class="hidden">
+  <div class="sep"></div>
+  <label style="color:var(--dim)">Ceiling</label>
+  <input id="ceilH" type="number" value="128" min="64" max="480" step="16" style="width:64px">
+  <select id="sky" title="Open-air ceiling and which sky texture to show (Doom II skies)">
+    <option value="">Indoors (no sky)</option>
+    <option value="SKY1">Sky 1 — brown city</option>
+    <option value="SKY2">Sky 2 — grey city</option>
+    <option value="SKY3">Sky 3 — red hell</option>
+  </select>
+  <label style="color:var(--dim)">Size</label>
+  <input id="gw" type="number" value="32" min="8" max="64" style="width:54px">
+  <span style="color:var(--dim)">×</span>
+  <input id="gd" type="number" value="32" min="8" max="64" style="width:54px">
+  <div class="sep"></div>
+  <select id="levelSel" title="Current level — exit switches lead to the next one"></select>
+  <button id="btnAddLevel" title="Add another level to the WAD">+ Level</button>
+  <button id="btnDelLevel" title="Delete the current level">−</button>
+  <div class="sep"></div>
+  <select id="mapName"><option>MAP01</option><option>E1M1</option></select>
+  <button id="btnExport" style="background:var(--accent);border-color:var(--accent);color:#fff">Export WAD</button>
+  <button id="btnHelp" title="Show/hide help">?</button>
+</div>
+<div id="main">
+  <div id="canvasWrap">
+    <canvas id="cv"></canvas>
+    <div id="noGL">The 3D view needs Three.js from the internet.<br>Connect and reload this page.</div>
+    <div id="thingInfo" class="hidden">
+      <b id="tiName"></b><br>
+      <span id="tiMeta"></span><br>
+      <button id="tiRotate">Rotate 45°</button>
+      <button id="tiDelete">Delete</button>
+      <button id="tiClose">✕</button>
+    </div>
+    <div id="help">
+      <button id="helpClose" title="Close">✕</button>
+      <b>Build with blocks</b><br>
+      Pick a tool on the right, then <b>click</b> a cell to apply it. <b>Right-click</b> removes
+      (thing → structure → one step of terrain, in that order).<br><br>
+      <b>Drag</b> to orbit · <b>wheel</b> to zoom · <b>middle-drag / shift-drag / arrows / WASD</b> to pan.
+      In Select mode, drag an object to move it to another cell.<br><br>
+      Heights are in Doom map units: the player is 56 tall (eye level 41) and can step up 24.
+      So a 16 slab is a stair step, 32 is thigh-high (jumpable in modern ports, a ledge in vanilla),
+      and each cell is 64×64 — about a meter and a half across.
+      Terrain steps of 16 are walkable; 32 needs a Slab stair in between. Wall blocks reach the
+      ceiling. Put a <b>Door</b> in a gap between walls. The <b>Exit switch</b> is a wall the player
+      "uses" to end the level. Add a <b>Player start</b> before exporting.<br><br>
+      <b>Teleporters</b>: paint a Teleport floor to make a pad — stepping on it jumps to the nearest
+      <b>Teleport Landing</b> thing (place the landing off the pad). The little nose on each thing
+      marker shows its facing; use <b>Rotate thing</b> to turn it.<br><br>
+      <b>+ Level</b> adds another map to the WAD — each level's exit switch leads to the next
+      (MAP01 → MAP02 → …), and each level has its own size, ceiling, and sky.<br><br>
+      Play the WAD: <span class="k">gzdoom -file episode.wad</span>
+    </div>
+  </div>
+  <div id="sidebar">
+    <h3>Mode</h3>
+    <button class="tool" data-tool="select" title="Click any placed object to inspect it"><span class="chip" style="background:#ffd24a"></span>Select object</button>
+    <h3>Terrain</h3>
+    <div style="display:flex;gap:4px">
+      <button class="tool" data-tool="terrain" data-dir="raise" style="flex:1" title="Click to raise terrain by the step"><span class="chip" style="background:#a5abb1"></span>Raise</button>
+      <button class="tool" data-tool="terrain" data-dir="lower" style="flex:1" title="Click to lower terrain by the step"><span class="chip" style="background:#4a4f54"></span>Lower</button>
+    </div>
+    <div class="row" style="margin-top:6px"><label>Step</label>
+      <button id="stepMinus" title="16 = one stair step; above 24 the player can't walk up">−</button>
+      <span id="stepLbl" style="min-width:34px;text-align:center;color:var(--text)">32</span>
+      <button id="stepPlus">+</button>
+    </div>
+    <div class="row"><label>Brush</label>
+      <select id="brushSel" style="flex:1">
+        <option value="1">1×1 (1 cell)</option>
+        <option value="2">2×2 (4 cells)</option>
+        <option value="3">3×3 (9 cells)</option>
+        <option value="4">4×4 (16 cells)</option>
+      </select>
+    </div>
+    <button class="tool" data-tool="erase"><span class="chip" style="background:#2a2a30"></span>Erase column</button>
+    <h3>Structure</h3>
+    <button class="tool" data-tool="wall"><span class="chip" style="background:#5f6a80"></span>Wall (to ceiling)</button>
+    <button class="tool" data-tool="door"><span class="chip" style="background:#c9a13b"></span>Door</button>
+    <button class="tool" data-tool="exit"><span class="chip" style="background:#3fae5a"></span>Exit switch</button>
+    <h3>Floor paint</h3>
+    <select id="surfSel" style="width:100%"></select>
+    <div style="display:flex;gap:4px;margin-top:6px">
+      <button class="tool" data-tool="paint" style="flex:1"><span class="chip" id="surfChip"></span>Paint</button>
+      <button class="tool" data-tool="fillfloor" style="flex:1" title="Flood-fill the connected area of matching floor">Fill</button>
+    </div>
+    <h3>Wall paint</h3>
+    <select id="wallSel" style="width:100%"></select>
+    <div style="display:flex;gap:4px;margin-top:6px">
+      <button class="tool" data-tool="wpaint" style="flex:1"><span class="chip" id="wallChip"></span>Paint</button>
+      <button class="tool" data-tool="fillwall" style="flex:1" title="Flood-fill the connected run of matching wall blocks">Fill</button>
+    </div>
+    <h3>Things</h3>
+    <select id="catSel" style="width:100%"></select>
+    <select id="thingSel" style="width:100%;margin-top:4px"></select>
+    <button class="tool" data-tool="thing" id="placeBtn" style="margin-top:6px"><span class="chip" id="thingChip" style="background:#4aa8ff"></span><span id="placeLbl">Place thing</span></button>
+    <button class="tool" data-tool="rotate" title="Click a placed thing to turn it 45° counter-clockwise"><span class="chip" style="background:#d8d8dc"></span>Rotate thing (45°)</button>
+    <h3>Info</h3>
+    <div class="row"><label>Grid</label><span id="infoGrid" style="color:var(--dim)"></span></div>
+    <div class="row"><label>Blocks</label><span id="infoBlocks" style="color:var(--dim)">0</span></div>
+  </div>
+</div>
+<div id="status"><span id="stCell">–</span><span id="stTool"></span><span id="stMsg"></span></div>
+
+<script>
+'use strict';
+// ================= world state =================
+let W = 32, D = 32;                           // grid size (editable)
+const CS = 64, HU = 16;                       // cell size, height unit
+const HMAX = 28;                              // max terrain in height-units (448)
+function newCol(){ return { h:0, wall:false, door:false, exit:false, surf:0, wmat:0, thing:0 }; }
+let grid = Array.from({length:W*D}, newCol);
+let levels = [], cur = 0;                     // multi-level project state
+const gi = (x,y) => y*W + x;
+const inb = (x,y) => x>=0 && x<W && y>=0 && y<D;
+
+const SURFS = [ // [label, flat, css color, sector special]
+  ['Tech',   'FLOOR4_8', '#878c91', 0],
+  ['Dirt',   'FLOOR7_1', '#8a6f52', 0],
+  ['Wood',   'FLAT5_1',  '#7a5a3a', 0],
+  ['Marble', 'DEM1_5',   '#5a7a62', 0],
+  ['Grass',  'GRASS1',   '#4e7a3e', 0],
+  ['Water',  'FWATER1',  '#3a5f9f', 0],
+  ['Nukage', 'NUKAGE1',  '#4faf3f', 7],
+  ['Lava',   'LAVA1',    '#cf5f2f', 16],
+  ['Blood',  'BLOOD1',   '#9f2f2f', 5],
+  ['Teleport','GATE1',   '#8f7fd4', 0],
+];
+const THING_CATS = [ // [category label, place-button label, hex color, [[id,name],...]]
+  ['Starts', 'Place start', 0x5fd35f, [
+    [1,'Player 1 Start'],[2,'Player 2 Start'],[3,'Player 3 Start'],[4,'Player 4 Start'],[11,'Deathmatch Start'],
+    [14,'Teleport Landing']]],
+  ['Enemies', 'Place enemy', 0xe05038, [
+    [3004,'Zombieman'],[9,'Shotgun Guy'],[65,'Chaingunner'],[3001,'Imp'],[3002,'Demon'],[58,'Spectre'],
+    [3006,'Lost Soul'],[3005,'Cacodemon'],[69,'Hell Knight'],[3003,'Baron of Hell'],[66,'Revenant'],
+    [67,'Mancubus'],[68,'Arachnotron'],[71,'Pain Elemental'],[64,'Arch-Vile'],[7,'Spiderdemon'],[16,'Cyberdemon'],
+    [84,'Wolfenstein SS']]],
+  ['Weapons & Ammo', 'Place weapon', 0x4aa8ff, [
+    [2001,'Shotgun'],[82,'Super Shotgun'],[2002,'Chaingun'],[2003,'Rocket Launcher'],[2004,'Plasma Rifle'],
+    [2005,'Chainsaw'],[2006,'BFG9000'],[2007,'Clip'],[2048,'Box of Bullets'],[2008,'Shells'],
+    [2049,'Box of Shells'],[2010,'Rocket'],[2046,'Box of Rockets'],[2047,'Cell'],[17,'Cell Pack'],[8,'Backpack']]],
+  ['Pickups', 'Place pickup', 0x9f8fff, [
+    [2011,'Stimpack'],[2012,'Medikit'],[2014,'Health Bonus'],[2015,'Armor Bonus'],[2018,'Green Armor'],
+    [2019,'Blue Armor'],[2013,'Soulsphere'],[83,'Megasphere'],[2022,'Invulnerability'],[2023,'Berserk'],
+    [2024,'Invisibility'],[2025,'Radiation Suit'],[2026,'Computer Map'],[2045,'Light Goggles']]],
+  ['Keys', 'Place key', 0xffd24a, [
+    [5,'Blue Keycard'],[40,'Blue Skull Key'],[6,'Yellow Keycard'],[39,'Yellow Skull Key'],
+    [13,'Red Keycard'],[38,'Red Skull Key']]],
+  ['Decorations', 'Place decoration', 0xb0a080, [
+    [2035,'Exploding Barrel'],[2028,'Floor Lamp'],[34,'Candle'],[35,'Candelabra'],[44,'Tall Blue Torch'],
+    [45,'Tall Green Torch'],[46,'Tall Red Torch'],[48,'Tech Column'],[30,'Tall Green Pillar'],
+    [32,'Tall Red Pillar'],[41,'Evil Eye'],[43,'Burnt Tree'],[54,'Large Brown Tree'],[15,'Dead Marine'],[10,'Gibs']]],
+  ['Hanging Gore', 'Place gore', 0xa05060, [
+    [63,'Hanging Victim (twitching)'],[59,'Hanging Victim (arms out)'],[61,'Hanging Victim (one-legged)'],
+    [60,'Hanging Pair of Legs'],[62,'Hanging Leg']]],
+  ['Boss & Special', 'Place special', 0xd07fd0, [
+    [88,'Icon of Sin (boss brain)'],[89,'Boss Spawn Shooter'],[87,'Boss Spawn Spot'],[72,'Commander Keen']]],
+];
+const THING_TYPES = THING_CATS.flatMap(c => c[3]);            // flat list for name lookups
+const CAT_OF = {}; THING_CATS.forEach((c,i) => c[3].forEach(([id]) => CAT_OF[id] = i));
+const MONSTERS = new Set(THING_CATS[1][3].map(([id]) => id));
+const KEYCOLORS = { 5:0x4a6aff, 40:0x4a6aff, 6:0xffd24a, 39:0xffd24a, 13:0xff4a4a, 38:0xff4a4a };
+const COMPASS = ['E','NE','N','NW','W','SW','S','SE'];
+function defAng(t) { return (t<=4 || t===11 || t===14) ? 90 : MONSTERS.has(t) ? 270 : 0; }
+const EDIMS = { // enemy [radius, height] in map units, for scaled markers
+  3004:[20,56], 9:[20,56], 65:[20,56], 84:[20,56], 3001:[20,56], 3002:[30,56], 58:[30,56],
+  3006:[16,48], 3005:[31,56], 69:[24,64], 3003:[24,64], 66:[20,80], 67:[48,64], 68:[64,64],
+  71:[31,56], 64:[20,56], 7:[128,100], 16:[40,110] };
+const WALLTEX = 'STARTAN2', DOORTEX = 'BIGDOOR2', SWTEX = 'SW1COMP';
+const WALLMATS = [ // [label, wall texture, css color]
+  ['Tech',     'STARTAN2', '#8f8878'],
+  ['Stone',    'STONE2',   '#7d7d7d'],
+  ['Brown',    'BROWN1',   '#7d5f47'],
+  ['Wood',     'WOOD5',    '#6b4a2e'],
+  ['Marble',   'MARBLE1',  '#5c7a64'],
+  ['Metal',    'METAL2',   '#565b63'],
+  ['Brick',    'BRICK7',   '#8a4a3a'],
+  ['Computer', 'COMPBLUE', '#3a5faf'],
+  ['Ash rock', 'ASHWALL2', '#4e4a46'],
+];
+
+const $ = id => document.getElementById(id);
+let tool = 'terrain';
+let terraDir = 'raise', terraStep = 32, brushN = 1;
+function brushCells(x, y) {   // N×N brush centered on the clicked cell (clipped to grid)
+  const off = Math.floor((brushN-1)/2), out = [];
+  for (let j=0;j<brushN;j++) for (let i=0;i<brushN;i++) {
+    const bx = x-off+i, by = y-off+j;
+    if (inb(bx,by)) out.push([bx,by]);
+  }
+  return out;
+}
+$('infoGrid').textContent = W + ' × ' + D + ' cells (64 units each)';
+THING_CATS.forEach(([label], i) => $('catSel').add(new Option(label, i)));
+function fillThings() {
+  const [, btnLabel, color, items] = THING_CATS[+$('catSel').value];
+  $('thingSel').innerHTML = '';
+  for (const [id,name] of items) $('thingSel').add(new Option(name, id));
+  $('placeLbl').textContent = btnLabel;
+  $('thingChip').style.background = '#' + color.toString(16).padStart(6,'0');
+}
+$('catSel').onchange = () => { fillThings(); tool = 'thing'; syncTools(); };
+$('thingSel').onchange = () => { tool = 'thing'; syncTools(); };
+fillThings();
+let paintSurf = 0, paintWall = 0;
+SURFS.forEach(([label], i) => $('surfSel').add(new Option(label, i)));
+WALLMATS.forEach(([label], i) => $('wallSel').add(new Option(label, i)));
+$('surfSel').onchange = () => { paintSurf = +$('surfSel').value; tool = 'paint'; syncTools(); };
+$('wallSel').onchange = () => { paintWall = +$('wallSel').value; tool = 'wpaint'; syncTools(); };
+document.querySelectorAll('.tool').forEach(b => b.onclick = () => { tool = b.dataset.tool; syncTools(); });
+function syncTools() {
+  document.querySelectorAll('.tool').forEach(b => b.classList.toggle('active', b.dataset.tool === tool));
+  $('surfChip').style.background = SURFS[paintSurf][2];
+  $('wallChip').style.background = WALLMATS[paintWall][2];
+  $('stTool').textContent = tool === 'select' ? 'select: click an object to inspect it'
+    : tool === 'paint' ? 'paint floor: ' + SURFS[paintSurf][0]
+    : tool === 'wpaint' ? 'paint wall: ' + WALLMATS[paintWall][0]
+    : tool === 'fillfloor' ? 'fill floor: ' + SURFS[paintSurf][0]
+    : tool === 'fillwall' ? 'fill wall: ' + WALLMATS[paintWall][0]
+    : tool === 'thing' ? 'place: ' + $('thingSel').selectedOptions[0].text : 'tool: ' + tool;
+}
+$('helpClose').onclick = () => $('help').classList.add('hidden');
+$('btnHelp').onclick = () => $('help').classList.toggle('hidden');
+
+// ================= editing =================
+let undoStack = [];
+function checkpoint() {
+  undoStack.push(JSON.stringify(grid));
+  if (undoStack.length > 60) undoStack.shift();
+}
+function undo() {
+  if (!undoStack.length) return;
+  grid = JSON.parse(undoStack.pop());
+  rebuild();
+}
+
+// ---- browser autosave, levels & grid sizing ----
+const LS_KEY = 'doomblocks-autosave';
+function clampDim(v){ return Math.max(8, Math.min(64, Math.round(v)||32)); }
+function storeCur() {
+  levels[cur] = { W, D, ceil:+$('ceilH').value, sky:$('sky').value, grid };
+}
+function autosave() {
+  try {
+    storeCur();
+    localStorage.setItem(LS_KEY, JSON.stringify({ levels, cur }));
+  } catch {}
+}
+function applyLevelState(L) {   // set globals + inputs from a level (no redraw)
+  W = clampDim(L.W); D = clampDim(L.D); grid = L.grid;
+  while (grid.length < W*D) grid.push(newCol());
+  grid.length = W*D;
+  $('gw').value = W; $('gd').value = D;
+  $('ceilH').value = L.ceil || 128;
+  $('sky').value = L.sky === true ? 'SKY1' : (L.sky || '');   // old saves used a boolean
+}
+function refreshView() {
+  $('infoGrid').textContent = W + ' × ' + D + ' cells (64 units each)';
+  undoStack = []; selCell = null;
+  if (gl.ready) { makeScenery(); gl.cam.target.set(W*CS/2, 0, -D*CS/2); }
+  syncLevelSel();
+  rebuild();
+}
+function switchLevel(i, store = true) {
+  if (store) storeCur();
+  cur = Math.max(0, Math.min(levels.length - 1, i));
+  applyLevelState(levels[cur]);
+  refreshView();
+}
+function syncLevelSel() {
+  const s = $('levelSel');
+  s.innerHTML = '';
+  levels.forEach((_, i) => s.add(new Option('MAP' + String(i+1).padStart(2,'0'), i)));
+  s.value = cur;
+  $('mapName').disabled = levels.length > 1;   // multi-level always exports MAP01..MAPnn
+}
+function freshLevel() {   // starter room so every level exports playable
+  const g = Array.from({length:32*32}, newCol);
+  const wall = (x,y) => { g[y*32+x].wall = true; };
+  for (let x=10;x<=20;x++){ wall(x,10); wall(x,20); }
+  for (let y=10;y<=20;y++){ wall(10,y); wall(20,y); }
+  g[10*32+15].wall = false; g[10*32+15].door = true;
+  g[15*32+15].thing = 1;
+  return { W:32, D:32, ceil:128, sky:'', grid:g };
+}
+function adoptProject(j) {
+  const norm = L => ({ W:clampDim(L.W), D:clampDim(L.D), ceil:L.ceil||128,
+    sky: L.sky === true ? 'SKY1' : (L.sky || ''), grid:L.grid });
+  if (j.levels && j.levels.length) {
+    levels = j.levels.map(norm);
+    cur = Math.min(j.cur || 0, levels.length - 1);
+  } else {
+    levels = [norm(j)]; cur = 0;                // legacy single-level project
+  }
+  applyLevelState(levels[cur]);
+  refreshView();
+}
+$('levelSel').onchange = () => switchLevel(+$('levelSel').value);
+$('btnAddLevel').onclick = () => {
+  storeCur();
+  levels.push(freshLevel());
+  switchLevel(levels.length - 1, false);
+};
+$('btnDelLevel').onclick = () => {
+  if (levels.length <= 1) { alert('A project needs at least one level.'); return; }
+  if (!confirm('Delete MAP' + String(cur+1).padStart(2,'0') + '?')) return;
+  levels.splice(cur, 1);
+  switchLevel(Math.min(cur, levels.length - 1), false);
+};
+function resizeGrid(nw, nd) {
+  nw = clampDim(nw); nd = clampDim(nd);
+  if (nw === W && nd === D) return;
+  const ng = Array.from({length:nw*nd}, newCol);
+  for (let y=0; y<Math.min(D,nd); y++)
+    for (let x=0; x<Math.min(W,nw); x++) ng[y*nw+x] = grid[gi(x,y)];
+  W = nw; D = nd; grid = ng; undoStack = [];   // undo cleared: snapshots have the old size
+  $('gw').value = W; $('gd').value = D;
+  $('infoGrid').textContent = W + ' × ' + D + ' cells (64 units each)';
+  if (gl.ready) { makeScenery(); gl.cam.target.set(W*CS/2, 0, -D*CS/2); }
+  rebuild();
+}
+$('gw').onchange = () => resizeGrid(+$('gw').value, D);
+$('gd').onchange = () => resizeGrid(W, +$('gd').value);
+const PAN_KEYS = { ArrowUp:[0,-1], w:[0,-1], ArrowDown:[0,1], s:[0,1],
+                   ArrowLeft:[-1,0], a:[-1,0], ArrowRight:[1,0], d:[1,0] };
+window.addEventListener('keydown', e => {
+  if ((e.metaKey||e.ctrlKey) && e.key==='z') { undo(); e.preventDefault(); return; }
+  if (e.key==='Escape') { selCell = null; refreshInfo(); return; }
+  if (e.target.tagName==='INPUT' || e.target.tagName==='SELECT') return;
+  const pk = PAN_KEYS[e.key];
+  if (pk && gl.ready) {           // pan the view relative to camera heading
+    const s = gl.cam.dist * 0.06;
+    const fx = Math.sin(gl.cam.theta), fz = Math.cos(gl.cam.theta);
+    gl.cam.target.x += (pk[0]*fz + pk[1]*fx) * s;
+    gl.cam.target.z += (-pk[0]*fx + pk[1]*fz) * s;
+    e.preventDefault();
+  }
+});
+
+function ceilUnits() { return Math.round(Math.min(480, Math.max(64, +$('ceilH').value||128)) / HU); }
+function applyTool(x, y) {
+  if (!inb(x,y)) return;
+  const c = grid[gi(x,y)];
+  if (tool==='select') {              // selection never modifies the map
+    selCell = c.thing ? {x, y} : null;
+    refreshInfo();
+    return;
+  }
+  checkpoint();
+  const maxH = Math.min(HMAX, ceilUnits());
+  if (tool==='raise') { c.wall=c.door=c.exit=false; c.h = Math.min(maxH, c.h+2); }
+  else if (tool==='slab') { c.wall=c.door=c.exit=false; c.h = Math.min(maxH, c.h+1); }
+  else if (tool==='lower') { c.h = Math.max(0, c.h-1); }
+  else if (tool==='erase') { Object.assign(c, newCol()); }
+  else if (tool==='wall') { c.wall=true; c.door=c.exit=false; c.thing=0; }
+  else if (tool==='door') { c.door=true; c.wall=c.exit=false; c.thing=0; }
+  else if (tool==='exit') { c.exit=true; c.wall=c.door=false; c.thing=0; }
+  else if (tool==='paint') { c.surf = paintSurf; }
+  else if (tool==='wpaint') { c.wmat = paintWall; }
+  else if (tool==='fillfloor' || tool==='fillwall') { floodFill(x, y, tool==='fillwall'); }
+  else if (tool==='thing') {
+    const t = +$('thingSel').value;
+    if (t===1) for (const o of grid) if (o.thing===1) o.thing=0; // one player start
+    c.wall=c.door=c.exit=false; c.thing = t; c.ang = defAng(t);
+  }
+  else if (tool==='rotate') {
+    if (c.thing) c.ang = ((c.ang ?? defAng(c.thing)) + 45) % 360;
+  }
+  rebuild();
+}
+// flood-fill paint: spreads over connected cells that match the clicked cell
+// floors: same texture AND same height, stopping at walls/doors/steps
+// walls: connected wall blocks with the same material (open cells fill edge material instead)
+function floodFill(x0, y0, wallMode) {
+  const start = grid[gi(x0,y0)];
+  const solid = c => c.wall || c.exit;
+  let match, apply;
+  if (wallMode) {
+    if (start.exit) return;                                  // exit switches keep their texture
+    if (start.wall) {
+      if (start.wmat === paintWall) return;
+      const w0 = start.wmat;
+      match = c => c.wall && c.wmat === w0;
+      apply = c => c.wmat = paintWall;
+    } else {                                                 // open area: fill its edge material
+      if (start.wmat === paintWall) return;
+      const w0 = start.wmat, h0 = start.h;
+      match = c => !solid(c) && !c.door && c.wmat === w0 && c.h === h0;
+      apply = c => c.wmat = paintWall;
+    }
+  } else {
+    if (solid(start) || start.door) return;
+    if (start.surf === paintSurf) return;
+    const s0 = start.surf, h0 = start.h;
+    match = c => !solid(c) && !c.door && c.surf === s0 && c.h === h0;
+    apply = c => c.surf = paintSurf;
+  }
+  const seen = new Set([gi(x0,y0)]);
+  const q = [[x0,y0]];
+  apply(start);
+  while (q.length) {
+    const [qx,qy] = q.pop();
+    for (const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+      const nx=qx+dx, ny=qy+dy;
+      if (!inb(nx,ny) || seen.has(gi(nx,ny))) continue;
+      seen.add(gi(nx,ny));
+      const n = grid[gi(nx,ny)];
+      if (match(n)) { apply(n); q.push([nx,ny]); }
+    }
+  }
+}
+function smartRemove(x, y) {
+  if (!inb(x,y)) return;
+  const c = grid[gi(x,y)];
+  checkpoint();
+  if (c.thing) c.thing = 0;
+  else if (c.wall||c.door||c.exit) c.wall=c.door=c.exit=false;
+  else c.h = Math.max(0, c.h-1);
+  rebuild();
+}
+
+// ================= compiler: blocks -> Doom map =================
+function compile() {
+  const ceil = ceilUnits() * HU;
+  const sky = !!$('sky').value;
+  // per-cell sector properties (null = solid)
+  const props = new Array(W*D).fill(null);
+  for (let y=0;y<D;y++) for (let x=0;x<W;x++) {
+    const c = grid[gi(x,y)];
+    if (c.wall || c.exit) continue;
+    if (!c.door) {
+      const s = SURFS[c.surf];
+      props[gi(x,y)] = { floorh: Math.min(c.h*HU, ceil), ceilh: ceil, floort: s[1],
+        ceilt: sky ? 'F_SKY1' : 'CEIL3_5', light: 192, special: s[3], tag: 0, door: false };
+    }
+  }
+  for (let y=0;y<D;y++) for (let x=0;x<W;x++) {    // doors: floor = lowest open neighbor
+    const c = grid[gi(x,y)];
+    if (!c.door) continue;
+    let f = null;
+    for (const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+      const p = inb(x+dx,y+dy) ? props[gi(x+dx,y+dy)] : null;
+      if (p && !p.door && (f===null || p.floorh < f)) f = p.floorh;
+    }
+    if (f===null) f = Math.min(c.h*HU, ceil);
+    props[gi(x,y)] = { floorh:f, ceilh:f, floort:'FLAT1', ceilt:'FLAT1', light:192, special:0, tag:0, door:true };
+  }
+  // flood-fill identical cells into regions (this is the sector merging)
+  const reg = new Array(W*D).fill(-1);            // -1 solid, -2 exit, >=0 region
+  for (let y=0;y<D;y++) for (let x=0;x<W;x++)
+    if (grid[gi(x,y)].exit) reg[gi(x,y)] = -2;
+  const key = i => props[i] ? JSON.stringify(props[i]) : null;
+  const sectors = [];
+  for (let y=0;y<D;y++) for (let x=0;x<W;x++) {
+    const i = gi(x,y);
+    if (!props[i] || reg[i] >= 0) continue;
+    const id = sectors.length, k = key(i);
+    sectors.push({ ...props[i] });
+    const q = [[x,y]]; reg[i] = id;
+    while (q.length) {
+      const [qx,qy] = q.pop();
+      for (const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+        const nx=qx+dx, ny=qy+dy;
+        if (!inb(nx,ny)) continue;
+        const ni = gi(nx,ny);
+        if (reg[ni] === -1 && props[ni] && key(ni) === k) { reg[ni] = id; q.push([nx,ny]); }
+      }
+    }
+  }
+  const isDoor = r => r>=0 && sectors[r].door;
+  // border segments -> linedefs (merge collinear runs with same left/right regions)
+  const m = { vertices:[], linedefs:[], sidedefs:[], sectors: sectors.map(s => {
+      const { door, ...rest } = s; return rest; }), things:[] };
+  // teleporters: GATE1 pad regions send the player to the nearest Teleport Landing (thing 14)
+  const isPad = r => r>=0 && !sectors[r].door && sectors[r].floort === 'GATE1';
+  const padTarget = {};
+  {
+    const landings = [];
+    for (let y=0;y<D;y++) for (let x=0;x<W;x++)
+      if (grid[gi(x,y)].thing === 14 && reg[gi(x,y)] >= 0)
+        landings.push({ x:x+0.5, y:y+0.5, sec: reg[gi(x,y)] });
+    const secTag = {}; let nextTag = 1;
+    for (const l of landings)
+      if (!secTag[l.sec]) { secTag[l.sec] = nextTag++; m.sectors[l.sec].tag = secTag[l.sec]; }
+    const cent = {};
+    for (let y=0;y<D;y++) for (let x=0;x<W;x++) {
+      const r = reg[gi(x,y)];
+      if (!isPad(r)) continue;
+      cent[r] = cent[r] || { sx:0, sy:0, n:0 };
+      cent[r].sx += x+0.5; cent[r].sy += y+0.5; cent[r].n++;
+    }
+    for (const r in cent) {
+      const cx = cent[r].sx/cent[r].n, cy = cent[r].sy/cent[r].n;
+      let best = null, bd = Infinity;
+      for (const l of landings) {
+        if (l.sec === +r) continue;                    // never teleport a pad to itself
+        const d2 = (l.x-cx)**2 + (l.y-cy)**2;
+        if (d2 < bd) { bd = d2; best = l; }
+      }
+      if (best) padTarget[r] = secTag[best.sec];
+    }
+  }
+  const vmap = new Map();
+  const V = (x,y) => {
+    const k = x+','+y;
+    if (!vmap.has(k)) { vmap.set(k, m.vertices.length); m.vertices.push({x, y}); }
+    return vmap.get(k);
+  };
+  const R = (x,y) => inb(x,y) ? reg[gi(x,y)] : -1;
+  // which wall texture an edge between two cells should use:
+  // solid side wins (you painted that wall block); between open cells the taller floor wins
+  const solidCell = (x,y) => !inb(x,y) || grid[gi(x,y)].wall || grid[gi(x,y)].exit;
+  const wm = (x,y) => WALLMATS[grid[gi(x,y)].wmat||0][1];
+  function edgeTex(xa,ya, xb,yb) {
+    const as = solidCell(xa,ya), bs = solidCell(xb,yb);
+    if (as && bs) return WALLTEX;
+    if (as) return inb(xa,ya) ? wm(xa,ya) : wm(xb,yb);
+    if (bs) return inb(xb,yb) ? wm(xb,yb) : wm(xa,ya);
+    const pa = props[gi(xa,ya)], pb = props[gi(xb,yb)];
+    return (pa && pb && pa.floorh < pb.floorh) ? wm(xb,yb) : wm(xa,ya);
+  }
+  function emit(x1,y1, x2,y2, front, back, solidType, tex) {
+    tex = tex || WALLTEX;
+    if (back === null) { // one-sided
+      const doorFront = isDoor(front);
+      m.sidedefs.push({ xoff:0, yoff:0, upper:'-', lower:'-',
+        middle: doorFront ? 'DOORTRAK' : (solidType===-2 ? SWTEX : tex), sector: front });
+      m.linedefs.push({ v1:V(x1,y1), v2:V(x2,y2), flags:1,
+        special: solidType===-2 ? 11 : 0, tag:0, front:m.sidedefs.length-1, back:-1 });
+    } else {
+      const door = isDoor(front) || isDoor(back);
+      const tele = !door && (isPad(front) !== isPad(back));
+      let special = 0, tag = 0;
+      if (door) {
+        if (isDoor(front)) {
+          // DR doors open the BACK sector — flip the line so the door is behind it
+          [front, back] = [back, front];
+          [x1, y1, x2, y2] = [x2, y2, x1, y1];
+        }
+        special = 1;
+      } else if (tele) {
+        if (isPad(front)) {
+          // WR teleports trigger when crossed from the FRONT — face lines away from the pad
+          [front, back] = [back, front];
+          [x1, y1, x2, y2] = [x2, y2, x1, y1];
+        }
+        if (padTarget[back]) { special = 97; tag = padTarget[back]; }
+      }
+      m.sidedefs.push({ xoff:0, yoff:0, upper: door?DOORTEX:tex, lower:tex, middle:'-', sector: front });
+      const f = m.sidedefs.length-1;
+      m.sidedefs.push({ xoff:0, yoff:0, upper: door?DOORTEX:tex, lower:tex, middle:'-', sector: back });
+      m.linedefs.push({ v1:V(x1,y1), v2:V(x2,y2), flags:4, special, tag, front:f, back:m.sidedefs.length-1 });
+    }
+  }
+  // vertical boundaries (between column x-1 and x)
+  for (let x=0;x<=W;x++) {
+    let run = null;
+    for (let y=0;y<=D;y++) {
+      const L = y<D ? R(x-1,y) : -9, Rr = y<D ? R(x,y) : -9;
+      let pair = (L===Rr || (L<0 && Rr<0)) ? null : L+'|'+Rr;
+      const tex = pair ? edgeTex(x-1,y, x,y) : '';
+      if (pair) pair += '|'+tex;
+      if (run && run.pair !== pair) { flushV(run); run = null; }
+      if (pair && !run) run = { pair, L, R:Rr, tex, y0:y, y1:y };
+      else if (run) run.y1 = y;
+    }
+    function flushV(r) {
+      const X = x*CS, ya = r.y0*CS, yb = (r.y1+1)*CS;
+      if (r.L < 0) emit(X, ya, X, yb, r.R, null, r.L, r.tex);        // northward, open east
+      else if (r.R < 0) emit(X, yb, X, ya, r.L, null, r.R, r.tex);   // southward, open west
+      else emit(X, yb, X, ya, r.L, r.R, 0, r.tex);                   // front = west
+    }
+  }
+  // horizontal boundaries (between row y-1 and y)
+  for (let y=0;y<=D;y++) {
+    let run = null;
+    for (let x=0;x<=W;x++) {
+      const S = x<W ? R(x,y-1) : -9, N = x<W ? R(x,y) : -9;
+      let pair = (S===N || (S<0 && N<0)) ? null : S+'|'+N;
+      const tex = pair ? edgeTex(x,y-1, x,y) : '';
+      if (pair) pair += '|'+tex;
+      if (run && run.pair !== pair) { flushH(run); run = null; }
+      if (pair && !run) run = { pair, S, N, tex, x0:x, x1:x };
+      else if (run) run.x1 = x;
+    }
+    function flushH(r) {
+      const Y = y*CS, xa = r.x0*CS, xb = (r.x1+1)*CS;
+      if (r.S < 0) emit(xb, Y, xa, Y, r.N, null, r.S, r.tex);        // westward, open north
+      else if (r.N < 0) emit(xa, Y, xb, Y, r.S, null, r.N, r.tex);   // eastward, open south
+      else emit(xa, Y, xb, Y, r.S, r.N, 0, r.tex);                   // front = south
+    }
+  }
+  // things
+  for (let y=0;y<D;y++) for (let x=0;x<W;x++) {
+    const c = grid[gi(x,y)];
+    if (!c.thing) continue;
+    m.things.push({ x:x*CS+CS/2, y:y*CS+CS/2,
+      angle: c.ang ?? defAng(c.thing), type:c.thing, flags:7 });
+  }
+  return m;
+}
+
+// ================= WAD writer =================
+function str8w(s) { const b=new Uint8Array(8); for (let i=0;i<Math.min(8,s.length);i++) b[i]=s.toUpperCase().charCodeAt(i); return b; }
+function mapLumps(m, mapName) {
+  const str8 = str8w;
+  let buf = new ArrayBuffer(m.things.length*10), dv = new DataView(buf);
+  m.things.forEach((t,i)=>{ dv.setInt16(i*10,Math.round(t.x),true); dv.setInt16(i*10+2,Math.round(t.y),true);
+    dv.setInt16(i*10+4,t.angle,true); dv.setInt16(i*10+6,t.type,true); dv.setInt16(i*10+8,t.flags,true); });
+  const THINGS = buf;
+  buf = new ArrayBuffer(m.linedefs.length*14); dv = new DataView(buf);
+  m.linedefs.forEach((l,i)=>{ dv.setUint16(i*14,l.v1,true); dv.setUint16(i*14+2,l.v2,true);
+    dv.setUint16(i*14+4,l.flags,true); dv.setUint16(i*14+6,l.special,true); dv.setUint16(i*14+8,l.tag,true);
+    dv.setUint16(i*14+10,l.front>=0?l.front:0xFFFF,true); dv.setUint16(i*14+12,l.back>=0?l.back:0xFFFF,true); });
+  const LINEDEFS = buf;
+  buf = new ArrayBuffer(m.sidedefs.length*30); dv = new DataView(buf);
+  let u8 = new Uint8Array(buf);
+  m.sidedefs.forEach((s,i)=>{ dv.setInt16(i*30,s.xoff,true); dv.setInt16(i*30+2,s.yoff,true);
+    u8.set(str8(s.upper),i*30+4); u8.set(str8(s.lower),i*30+12); u8.set(str8(s.middle),i*30+20);
+    dv.setUint16(i*30+28,s.sector,true); });
+  const SIDEDEFS = buf;
+  buf = new ArrayBuffer(m.vertices.length*4); dv = new DataView(buf);
+  m.vertices.forEach((v,i)=>{ dv.setInt16(i*4,Math.round(v.x),true); dv.setInt16(i*4+2,Math.round(v.y),true); });
+  const VERTEXES = buf;
+  buf = new ArrayBuffer(m.sectors.length*26); dv = new DataView(buf);
+  u8 = new Uint8Array(buf);
+  m.sectors.forEach((s,i)=>{ dv.setInt16(i*26,s.floorh,true); dv.setInt16(i*26+2,s.ceilh,true);
+    u8.set(str8(s.floort),i*26+4); u8.set(str8(s.ceilt),i*26+12);
+    dv.setInt16(i*26+20,s.light,true); dv.setInt16(i*26+22,s.special,true); dv.setInt16(i*26+24,s.tag,true); });
+  const SECTORS = buf;
+  const EMPTY = new ArrayBuffer(0);
+  return [[mapName,EMPTY],['THINGS',THINGS],['LINEDEFS',LINEDEFS],['SIDEDEFS',SIDEDEFS],
+    ['VERTEXES',VERTEXES],['SEGS',EMPTY],['SSECTORS',EMPTY],['NODES',EMPTY],['SECTORS',SECTORS],
+    ['REJECT',EMPTY],['BLOCKMAP',EMPTY]];
+}
+function mapinfoLump(entries) {  // ZDoom-family MAPINFO: per-level sky regardless of slot
+  let txt = '';
+  for (const e of entries) txt += 'map ' + e.slot + ' "DoomBlocks"\n{\n  sky1 = "' + e.sky + '"\n}\n';
+  const enc = new Uint8Array(txt.length);
+  for (let i=0;i<txt.length;i++) enc[i] = txt.charCodeAt(i);
+  return ['MAPINFO', enc.buffer];
+}
+function buildWad(lumps) {
+  let dataSize = 0;
+  for (const [,d] of lumps) dataSize += d.byteLength;
+  const out = new ArrayBuffer(12 + dataSize + lumps.length*16);
+  const odv = new DataView(out), ou8 = new Uint8Array(out);
+  ou8.set([0x50,0x57,0x41,0x44],0);
+  odv.setInt32(4,lumps.length,true);
+  let ofs = 12; const dir = [];
+  for (const [name,d] of lumps) { ou8.set(new Uint8Array(d),ofs); dir.push([ofs,d.byteLength,name]); ofs += d.byteLength; }
+  odv.setInt32(8,ofs,true);
+  for (const [lofs,lsize,name] of dir) {
+    odv.setInt32(ofs,lofs,true); odv.setInt32(ofs+4,lsize,true); ou8.set(str8w(name),ofs+8); ofs += 16;
+  }
+  return out;
+}
+function wadBytes(m, mapName, skyName) {  // single-map convenience
+  const lumps = mapLumps(m, mapName);
+  if (skyName) lumps.push(mapinfoLump([{ slot:mapName, sky:skyName }]));
+  return buildWad(lumps);
+}
+function download(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name;
+  a.click(); setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+}
+$('btnExport').onclick = () => {
+  storeCur();
+  const multi = levels.length > 1;
+  const maps = [], problems = [];
+  levels.forEach((L, i) => {
+    applyLevelState(L);                        // compile() reads globals + inputs
+    const m = compile();
+    const slot = multi ? 'MAP' + String(i+1).padStart(2,'0') : $('mapName').value;
+    if (!m.sectors.length) problems.push(slot + ': no open space');
+    if (!m.things.some(t => t.type === 1)) problems.push(slot + ': no Player 1 Start');
+    maps.push({ m, slot, sky: $('sky').value });
+  });
+  applyLevelState(levels[cur]);                // restore the level being edited
+  if (problems.length && !confirm(problems.join('\n')+'\n\nExport anyway?')) return;
+  const lumps = maps.flatMap(x => mapLumps(x.m, x.slot));
+  const skied = maps.filter(x => x.sky);
+  if (skied.length) lumps.push(mapinfoLump(skied));
+  download(new Blob([buildWad(lumps)], {type:'application/octet-stream'}),
+    multi ? 'episode.wad' : $('mapName').value.toLowerCase()+'.wad');
+  $('stMsg').textContent = 'exported ' + maps.length + ' level' + (multi ? 's' : '') +
+    ', ' + maps.reduce((n,x)=>n+x.m.sectors.length,0) + ' sectors total';
+};
+$('btnSave').onclick = () => {
+  storeCur();
+  download(new Blob([JSON.stringify({ levels, cur })], {type:'application/json'}), 'doom-blocks.json');
+};
+$('btnLoad').onclick = () => $('fileInput').click();
+$('fileInput').onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  f.text().then(txt => {
+    try {
+      const j = JSON.parse(txt);
+      if (!j.levels && !(j.grid && j.W && j.D)) throw 0;
+      adoptProject(j);
+    } catch { alert('Not a valid DoomBlocks project.'); }
+  });
+  e.target.value = '';
+};
+$('btnNew').onclick = () => {
+  if (!confirm('Start a new project? All levels will be replaced.')) return;
+  levels = [freshLevel()]; cur = 0;
+  applyLevelState(levels[0]);
+  refreshView();
+};
+$('ceilH').onchange = rebuild;
+$('sky').onchange = autosave;
+
+// ================= 3D view =================
+const gl = { ready:false };
+function initGL() {
+  const cv = $('cv'), wrap = $('canvasWrap');
+  gl.renderer = new THREE.WebGLRenderer({ canvas:cv, antialias:true });
+  gl.scene = new THREE.Scene();
+  gl.scene.background = new THREE.Color(0x15161b);
+  gl.camera = new THREE.PerspectiveCamera(55, 1, 10, 30000);
+  gl.scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+  const sun = new THREE.DirectionalLight(0xffffff, 0.65);
+  sun.position.set(0.5, 1, 0.3); gl.scene.add(sun);
+  makeScenery();
+  gl.ghost = new THREE.Mesh(new THREE.BoxGeometry(CS, 6, CS),
+    new THREE.MeshBasicMaterial({ color:0xffd24a, transparent:true, opacity:0.5, depthWrite:false }));
+  gl.ghost.visible = false; gl.scene.add(gl.ghost);
+  gl.cam = { theta: 0.75, phi: 0.95, dist: 2100,
+    target: new THREE.Vector3(W*CS/2, 0, -D*CS/2) };
+  gl.ray = new THREE.Raycaster();
+  gl.ready = true;
+  const resize = () => {
+    const r = wrap.getBoundingClientRect();
+    gl.renderer.setPixelRatio(devicePixelRatio);
+    gl.renderer.setSize(r.width, r.height, false);
+    gl.camera.aspect = r.width/r.height;
+    gl.camera.updateProjectionMatrix();
+  };
+  window.addEventListener('resize', resize); resize();
+  bindMouse(cv);
+  rebuild();
+  (function loop(){ requestAnimationFrame(loop); placeCamera(); gl.renderer.render(gl.scene, gl.camera); })();
+}
+function makeScenery() { // grid lines + invisible picking plane, sized to the current map
+  if (gl.gridLines) { gl.scene.remove(gl.gridLines); gl.gridLines.geometry.dispose(); }
+  if (gl.ground) { gl.scene.remove(gl.ground); gl.ground.geometry.dispose(); }
+  const pts = [];
+  for (let x=0;x<=W;x++) pts.push(x*CS,0.5,0, x*CS,0.5,-D*CS);
+  for (let y=0;y<=D;y++) pts.push(0,0.5,-y*CS, W*CS,0.5,-y*CS);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pts,3));
+  gl.gridLines = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color:0x2e2e3a }));
+  gl.scene.add(gl.gridLines);
+  gl.ground = new THREE.Mesh(new THREE.PlaneGeometry(W*CS, D*CS),
+    new THREE.MeshBasicMaterial({ transparent:true, opacity:0, depthWrite:false }));
+  gl.ground.rotation.x = -Math.PI/2;
+  gl.ground.position.set(W*CS/2, -1, -D*CS/2);
+  gl.scene.add(gl.ground);
+}
+function placeCamera() {
+  const c = gl.cam;
+  c.phi = Math.max(0.12, Math.min(1.5, c.phi));
+  c.dist = Math.max(220, Math.min(9000, c.dist));
+  gl.camera.position.set(
+    c.target.x + c.dist*Math.sin(c.phi)*Math.sin(c.theta),
+    c.target.y + c.dist*Math.cos(c.phi),
+    c.target.z + c.dist*Math.sin(c.phi)*Math.cos(c.theta));
+  gl.camera.lookAt(c.target);
+}
+function colTop(c, ceil) { return (c.wall||c.exit||c.door) ? ceil : c.h*HU; }
+function rebuild() {
+  $('infoBlocks').textContent = grid.reduce((n,c)=>n+Math.ceil(c.h/2)+(c.wall||c.exit||c.door?1:0),0);
+  autosave();
+  refreshInfo();
+  if (!gl.ready) return;
+  if (gl.world) { gl.scene.remove(gl.world); gl.world.geometry.dispose(); }
+  if (gl.thingGroup) { gl.scene.remove(gl.thingGroup); }
+  const ceil = ceilUnits()*HU;
+  const pos = [], col = [];
+  const C = new THREE.Color();
+  const push = (c, ...pts) => { for (let i=0;i<pts.length;i+=3) { pos.push(pts[i],pts[i+1],pts[i+2]); col.push(c.r,c.g,c.b); } };
+  const quadY = (x0,z0,x1,z1,y,c) => { // horizontal quad (top face), map->three z = -mapY
+    push(c, x0,y,-z0, x1,y,-z0, x1,y,-z1,  x0,y,-z0, x1,y,-z1, x0,y,-z1);
+  };
+  const quadV = (x0,y0,z0, x1,y1,z1, c) => { // vertical quad from two ground points + heights
+    push(c, x0,y0,-z0, x1,y0,-z1, x1,y1,-z1,  x0,y0,-z0, x1,y1,-z1, x0,y1,-z0);
+  };
+  for (let y=0;y<D;y++) for (let x=0;x<W;x++) {
+    const c = grid[gi(x,y)];
+    const isStruct = c.wall||c.exit||c.door;
+    const top = isStruct ? ceil : Math.min(c.h*HU, ceil);
+    const cc = new THREE.Color(c.wall ? WALLMATS[c.wmat||0][2] : c.exit ? '#3fae5a' : c.door ? '#c9a13b' : SURFS[c.surf][2]);
+    const X0=x*CS, X1=(x+1)*CS, Y0=y*CS, Y1=(y+1)*CS;
+    quadY(X0,Y0,X1,Y1, top + (isStruct?0:0.01), cc);
+    // side faces show the wall material (matches what the compiler exports)
+    const side = (isStruct ? cc.clone() : new THREE.Color(WALLMATS[c.wmat||0][2])).multiplyScalar(0.62);
+    // side faces where this column is taller than neighbor
+    const nb = [[1,0,X1,Y0,X1,Y1],[ -1,0,X0,Y1,X0,Y0],[0,1,X1,Y1,X0,Y1],[0,-1,X0,Y0,X1,Y0]];
+    for (const [dx,dy,ax,ay,bx,by] of nb) {
+      const n = inb(x+dx,y+dy) ? grid[gi(x+dx,y+dy)] : null;
+      const nTop = n ? (n.wall||n.exit||n.door ? ceil : Math.min(n.h*HU, ceil)) : 0;
+      if (top > nTop) quadV(ax, nTop, ay, bx, top, by, side);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col,3));
+  g.computeVertexNormals();
+  gl.world = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors:true }));
+  gl.scene.add(gl.world);
+  // things
+  gl.thingGroup = new THREE.Group();
+  for (let y=0;y<D;y++) for (let x=0;x<W;x++) {
+    const c = grid[gi(x,y)];
+    if (!c.thing) continue;
+    const color = KEYCOLORS[c.thing] ?? (c.thing===2035 ? 0x8f4f2f
+      : (THING_CATS[CAT_OF[c.thing]] || [0,0,0x4aa8ff])[2]);
+    const fl = Math.min(c.h*HU, ceil);
+    const grp = thingMesh(c.thing, color, ceil - fl);
+    grp.rotation.y = (c.ang ?? defAng(c.thing)) * Math.PI/180;
+    grp.position.set(x*CS+CS/2, fl, -(y*CS+CS/2));
+    grp.userData = { thing:true, x, y };
+    gl.thingGroup.add(grp);
+  }
+  gl.scene.add(gl.thingGroup);
+}
+// recognizable marker shapes per thing category, roughly to Doom scale
+function thingMesh(t, color, avail) {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshLambertMaterial({ color });
+  const rope = new THREE.MeshLambertMaterial({ color: 0x777777 });
+  const add = (geo, y, m, x, z) => {
+    const o = new THREE.Mesh(geo, m || mat);
+    o.position.set(x||0, y, z||0);
+    g.add(o); return o;
+  };
+  const nose = (x, y) => {
+    const n = add(new THREE.ConeGeometry(6, 16, 4), y, mat, x);
+    n.rotation.z = -Math.PI/2;
+  };
+  const cat = CAT_OF[t];
+  if (cat === 0) {                                     // starts: pad + beacon + arrow
+    add(new THREE.CylinderGeometry(18, 18, 4, 16), 2);
+    if (t === 14) { add(new THREE.CylinderGeometry(3, 3, 56, 8), 28); add(new THREE.SphereGeometry(6, 8, 6), 58); }
+    else add(new THREE.ConeGeometry(10, 36, 6), 22);
+    nose(22, 6);
+  } else if (cat === 1) {                              // enemies, scaled to real size
+    const [r, h] = EDIMS[t] || [20, 56];
+    // translucent footprint disc = the monster's true in-game radius (may span cells)
+    add(new THREE.CylinderGeometry(r, r, 1.5, 24), 0.8,
+      new THREE.MeshBasicMaterial({ color, transparent:true, opacity:0.22 }));
+    if (t===3005 || t===3006 || t===71) {              // flyers hover
+      const fr = Math.min(r, 28), fy = Math.max(34, fr + 14);
+      add(new THREE.SphereGeometry(fr, 10, 8), fy);
+      nose(fr + 8, fy);
+    } else if (t===7 || t===68) {                      // spider-types: dome + splayed legs to true radius
+      const dome = Math.min(r*0.5, 60);
+      add(new THREE.SphereGeometry(dome, 10, 6, 0, Math.PI*2, 0, Math.PI/2), h*0.3);
+      for (const a of [0.6, 2.5, 3.8, 5.7]) {
+        const leg = add(new THREE.BoxGeometry(4, h*0.55, 4), h*0.22, mat, Math.cos(a)*r*0.8, Math.sin(a)*r*0.8);
+        leg.rotation.z = Math.cos(a)*0.6; leg.rotation.x = -Math.sin(a)*0.6;
+      }
+      nose(r*0.8, h*0.4);
+    } else {                                           // humanoid: legs, torso, head
+      const rr = Math.min(r, 48);
+      add(new THREE.BoxGeometry(rr*0.9, h*0.4, rr*0.5), h*0.2);
+      add(new THREE.BoxGeometry(rr*1.3, h*0.35, rr*0.6), h*0.575);
+      add(new THREE.SphereGeometry(rr*0.4, 8, 6), h*0.85);
+      nose(rr*0.8, h*0.72);
+    }
+  } else if (cat === 2) {                              // weapons long & flat, ammo crates
+    if (new Set([2001,82,2002,2003,2004,2005,2006]).has(t)) add(new THREE.BoxGeometry(40, 6, 8), 5);
+    else { const s = new Set([2048,2049,2046,17,8]).has(t) ? 18 : 11; add(new THREE.BoxGeometry(s, s*0.7, s), s*0.35); }
+  } else if (cat === 3) {                              // pickups
+    if (new Set([2011,2012,2014,2023]).has(t)) { add(new THREE.BoxGeometry(20, 7, 7), 12); add(new THREE.BoxGeometry(7, 20, 7), 12); }
+    else if (new Set([2013,83,2022,2024,2045]).has(t)) add(new THREE.SphereGeometry(13, 10, 8), 16);
+    else if (t===2026) add(new THREE.BoxGeometry(20, 24, 2), 14).rotation.x = -0.4;
+    else add(new THREE.BoxGeometry(22, 26, 8), 14);    // armors, rad suit
+  } else if (cat === 4) {                              // keys: card or skull-on-post
+    if (t===38||t===39||t===40) { add(new THREE.CylinderGeometry(2, 2, 18, 6), 9); add(new THREE.SphereGeometry(8, 8, 6), 22); }
+    else add(new THREE.BoxGeometry(14, 22, 3), 14).rotation.y = 0.5;
+  } else if (cat === 5) {                              // decorations
+    if (t===2035) add(new THREE.CylinderGeometry(12, 12, 34, 10), 17, new THREE.MeshLambertMaterial({ color: 0x556644 }));
+    else if (new Set([2028,34,35,44,45,46]).has(t)) {
+      const glow = t===44 ? 0x6a8aff : t===45 ? 0x6aff8a : t===46 ? 0xff6a5a : 0xffe9a0;
+      const tall = t !== 34;
+      add(new THREE.CylinderGeometry(2.5, 4, tall?30:10, 8), tall?15:5);
+      add(new THREE.SphereGeometry(6, 8, 6), tall?34:12,
+        new THREE.MeshLambertMaterial({ color: glow, emissive: glow, emissiveIntensity: 0.6 }));
+    }
+    else if (new Set([48,30,32]).has(t)) add(new THREE.CylinderGeometry(10, 12, 44, 10), 22);
+    else if (t===41) { add(new THREE.ConeGeometry(10, 14, 8), 7); add(new THREE.SphereGeometry(9, 10, 8), 24); }
+    else if (t===43||t===54) {
+      const s = t===54 ? 1.5 : 1;
+      add(new THREE.CylinderGeometry(4*s, 6*s, 26*s, 8), 13*s, new THREE.MeshLambertMaterial({ color: 0x5a4630 }));
+      if (t===54) add(new THREE.ConeGeometry(20, 34, 8), 50, new THREE.MeshLambertMaterial({ color: 0x3f5a34 }));
+    }
+    else add(new THREE.BoxGeometry(30, 6, 18), 3);     // corpses & gibs lie flat
+  } else if (cat === 6) {                              // hanging gore: rope from ceiling
+    const y0 = Math.max(30, avail);
+    add(new THREE.CylinderGeometry(1.2, 1.2, 16, 6), y0 - 8, rope);
+    add(new THREE.BoxGeometry(10, 22, 8), y0 - 27);
+  } else if (cat === 7) {                              // boss & special
+    if (t===88) add(new THREE.SphereGeometry(18, 10, 8), 30);
+    else if (t===72) { const y0 = Math.max(30, avail); add(new THREE.CylinderGeometry(1.2, 1.2, 14, 6), y0 - 7, rope); add(new THREE.BoxGeometry(12, 20, 8), y0 - 24); }
+    else if (t===87) add(new THREE.CylinderGeometry(20, 20, 2, 16), 1);
+    else { add(new THREE.CylinderGeometry(2.5, 2.5, 30, 8), 15); add(new THREE.BoxGeometry(12, 10, 10), 34); }
+  } else {
+    add(new THREE.ConeGeometry(16, 44, 5), 22);        // unknown type fallback
+  }
+  return g;
+}
+// selection info box
+let selCell = null;
+function refreshInfo() {
+  const p = $('thingInfo');
+  const c = selCell && inb(selCell.x, selCell.y) ? grid[gi(selCell.x, selCell.y)] : null;
+  if (!c || !c.thing) {
+    p.classList.add('hidden');
+    if (gl.selRing) gl.selRing.visible = false;
+    return;
+  }
+  const name = (THING_TYPES.find(t => t[0] === c.thing) || [0, 'Type ' + c.thing])[1];
+  const cat = THING_CATS[CAT_OF[c.thing]];
+  const ang = c.ang ?? defAng(c.thing);
+  $('tiName').textContent = name;
+  const dims = EDIMS[c.thing];
+  $('tiMeta').textContent = (cat ? cat[0] : '?') + ' · cell ' + selCell.x + ',' + selCell.y +
+    ' · floor ' + Math.min(c.h*HU, ceilUnits()*HU) + ' · facing ' + COMPASS[(ang/45)|0] + ' (' + ang + '°)' +
+    (dims ? ' · radius ' + dims[0] + (dims[0] > 32 ? ' (needs ' + Math.ceil(dims[0]*2/CS) + ' cells clear)' : '') : '');
+  p.classList.remove('hidden');
+  if (!gl.ready) return;
+  if (!gl.selRing) {
+    gl.selRing = new THREE.Mesh(new THREE.TorusGeometry(26, 2.2, 8, 24),
+      new THREE.MeshBasicMaterial({ color: 0xffd24a }));
+    gl.selRing.rotation.x = -Math.PI/2;
+    gl.scene.add(gl.selRing);
+  }
+  gl.selRing.visible = true;
+  gl.selRing.position.set(selCell.x*CS + CS/2, Math.min(c.h*HU, ceilUnits()*HU) + 2, -(selCell.y*CS + CS/2));
+}
+$('tiRotate').onclick = () => {
+  if (!selCell) return;
+  checkpoint();
+  const c = grid[gi(selCell.x, selCell.y)];
+  c.ang = ((c.ang ?? defAng(c.thing)) + 45) % 360;
+  rebuild();
+};
+$('tiDelete').onclick = () => {
+  if (!selCell) return;
+  checkpoint();
+  grid[gi(selCell.x, selCell.y)].thing = 0;
+  rebuild();
+};
+$('tiClose').onclick = () => { selCell = null; refreshInfo(); };
+// mouse: click=apply, right-click=remove, drag=orbit, shift/middle-drag=pan
+function bindMouse(cv) {
+  let down = null;
+  cv.addEventListener('contextmenu', e => e.preventDefault());
+  cv.addEventListener('mousedown', e => {
+    down = { x:e.clientX, y:e.clientY, btn:e.button, shift:e.shiftKey, moved:false,
+      theta:gl.cam.theta, phi:gl.cam.phi, target:gl.cam.target.clone() };
+    if (e.button === 0 && tool === 'select') {
+      const th = pickThing(e, cv);          // in select mode, dragging a marker moves it
+      if (th) down.moveThing = th;
+    }
+  });
+  window.addEventListener('mousemove', e => {
+    const cell = pick(e, cv);
+    if (cell && !down) {
+      gl.ghost.visible = true;
+      const c = grid[gi(cell.x,cell.y)];
+      gl.ghost.position.set(cell.x*CS+CS/2, colTop(c, ceilUnits()*HU)+4, -(cell.y*CS+CS/2));
+      $('stCell').textContent = 'cell '+cell.x+','+cell.y+'  floor '+(c.h*HU)+
+        (c.wall?'  [wall]':c.door?'  [door]':c.exit?'  [exit]':'')+
+        (c.thing?'  ['+(THING_TYPES.find(t=>t[0]===c.thing)||['?','?'])[1]+' → '+
+          COMPASS[((c.ang ?? defAng(c.thing))/45)|0]+']':'');
+    } else if (!cell) { gl.ghost.visible = false; $('stCell').textContent = '–'; }
+    if (!down) return;
+    const dx = e.clientX-down.x, dy = e.clientY-down.y;
+    if (Math.abs(dx)+Math.abs(dy) > 5) down.moved = true;
+    if (!down.moved) return;
+    if (down.moveThing) {             // dragging an object: highlight the destination cell
+      const cell = pick(e, cv);
+      down.destCell = cell;
+      if (cell && gl.ready) {
+        const cc = grid[gi(cell.x, cell.y)];
+        gl.ghost.visible = true;
+        gl.ghost.position.set(cell.x*CS+CS/2, colTop(cc, ceilUnits()*HU)+4, -(cell.y*CS+CS/2));
+      }
+      return;
+    }
+    if (down.btn===1 || down.shift) { // pan in ground plane
+      const k = gl.cam.dist*0.0013;
+      const fx = Math.sin(gl.cam.theta), fz = Math.cos(gl.cam.theta);
+      gl.cam.target.copy(down.target)
+        .addScaledVector(new THREE.Vector3(fz,0,-fx), dx*k)   // screen-right
+        .addScaledVector(new THREE.Vector3(fx,0,fz), dy*k);   // screen-up (toward camera)
+    } else { // orbit (either button)
+      gl.cam.theta = down.theta - dx*0.005;
+      gl.cam.phi = down.phi - dy*0.005;
+    }
+  });
+  window.addEventListener('mouseup', e => {
+    if (!down) return;
+    const wasClick = !down.moved;
+    const btn = down.btn, shift = down.shift;
+    const mv = down.moveThing, dest = down.destCell;
+    down = null;
+    if (mv && !wasClick) {            // finish an object drag-move
+      if (dest && inb(dest.x, dest.y) && (dest.x !== mv.x || dest.y !== mv.y)) {
+        const sc = grid[gi(mv.x, mv.y)], dc = grid[gi(dest.x, dest.y)];
+        if (sc.thing && !dc.thing && !dc.wall && !dc.door && !dc.exit) {
+          checkpoint();
+          dc.thing = sc.thing; dc.ang = sc.ang;
+          sc.thing = 0;
+          selCell = { x: dest.x, y: dest.y };
+          rebuild();
+        }
+      }
+      return;
+    }
+    if (!wasClick || shift) return;
+    if (btn === 0) {
+      const th = pickThing(e, cv);          // clicking a marker selects it (rotate tool rotates it)
+      if (th && tool === 'rotate') { applyTool(th.x, th.y); selCell = th; refreshInfo(); return; }
+      if (th) { selCell = th; refreshInfo(); return; }
+      const cell = pick(e, cv);
+      if (cell) applyTool(cell.x, cell.y);
+    } else if (btn === 2) {
+      const cell = pick(e, cv);
+      if (cell) smartRemove(cell.x, cell.y);
+    }
+  });
+  cv.addEventListener('wheel', e => {
+    e.preventDefault();
+    gl.cam.dist *= Math.exp(e.deltaY*0.0012);
+  }, { passive:false });
+}
+function pickThing(e, cv) {
+  if (!gl.ready || !gl.thingGroup) return null;
+  const r = cv.getBoundingClientRect();
+  const nx = ((e.clientX-r.left)/r.width)*2-1, ny = -((e.clientY-r.top)/r.height)*2+1;
+  gl.ray.setFromCamera({x:nx, y:ny}, gl.camera);
+  const hits = gl.ray.intersectObjects(gl.thingGroup.children, true);
+  if (!hits.length) return null;
+  let o = hits[0].object;
+  while (o && !(o.userData && o.userData.thing)) o = o.parent;
+  return o ? { x: o.userData.x, y: o.userData.y } : null;
+}
+function pick(e, cv) {
+  if (!gl.ready || !gl.world) return null;
+  const r = cv.getBoundingClientRect();
+  const nx = ((e.clientX-r.left)/r.width)*2-1, ny = -((e.clientY-r.top)/r.height)*2+1;
+  if (nx<-1||nx>1||ny<-1||ny>1) return null;
+  gl.ray.setFromCamera({x:nx,y:ny}, gl.camera);
+  const hits = gl.ray.intersectObjects([gl.world, gl.ground], false);
+  if (!hits.length) return null;
+  const h = hits[0];
+  const p = h.point.clone();
+  if (h.face) p.addScaledVector(h.face.normal, -0.5);
+  const cx = Math.floor(p.x/CS), cy = Math.floor(-p.z/CS);
+  return inb(cx,cy) ? {x:cx, y:cy} : null;
+}
+
+// ================= init =================
+syncTools();
+window.addEventListener('load', () => {
+  if (window.THREE) initGL();
+  else $('noGL').style.display = 'flex';
+});
+// restore autosaved project from browser storage, else start with one starter level
+(function initMap(){
+  try {
+    const j = JSON.parse(localStorage.getItem(LS_KEY));
+    if (j && (j.levels || (j.grid && j.W && j.D))) { adoptProject(j); return; }
+  } catch {}
+  levels = [freshLevel()]; cur = 0;
+  applyLevelState(levels[0]);
+  syncLevelSel();
+})();
+</script>
+</body>
+</html>
