@@ -47,10 +47,15 @@ and can automatically step up **24**. Each grid cell is **64×64** — roughly a
 - **Wall paint / Fill** — stone, wood, marble, metal, brick, computer, etc. Fill repaints a whole
   connected run of same-material wall blocks. Painting an open cell sets the texture of its
   raised terrain edges instead.
-- **Murals** — the wall palette includes the nine **Icon of Sin** face pieces (assemble them
-  across adjacent wall blocks; piece 5 is the brain hole) and other Doom II murals (goat face,
-  hanging victims, impaled corpses, skin face, spine wall). Mural textures are wider than one
-  block, so they spread across consecutive cells — experiment with the piece order.
+- **Murals** — the wall palette includes the nine **Icon of Sin** face pieces and other
+  Doom II murals: goat face, hanging victims, impaled corpses, skin face, spine wall, the
+  marble demon faces (the horned one is an image of the Icon of Sin itself), and the
+  green-stone gargoyle/lion/satyr faces. Each label shows the texture size in 64-unit
+  blocks as width×height — e.g. (4×2) spans four wall cells and fills a 128-tall wall.
+  The Icon of Sin face is a 3×3 grid of (4×2) tiles, labeled by position (horns across the
+  top, jaw across the bottom; the hole into the brain is in the forehead tile). A full row
+  is 12 cells wide — paint the three tiles of one row side by side. If a piece looks
+  misplaced in-game, swap it within its row; the original arrangement isn't documented.
 - **Things** — two dropdowns: category (Starts, Enemies, Weapons & Ammo, Pickups, Keys,
   Decorations, Hanging Gore, Boss & Special), then the item. Markers use recognizable shapes
   scaled to real size; big monsters show a translucent footprint disc (a Spiderdemon needs a
@@ -86,6 +91,19 @@ Your project **autosaves to browser storage** on every edit and restores when yo
 page in the same browser. Use **Save Project** / **Open Project** for permanent `.json` files
 you can back up or share. **Undo** is Cmd/Ctrl+Z (per level; cleared when switching levels
 or resizing).
+
+## Development
+
+`verify-blocks.js` is a headless regression suite: it boots the editor in jsdom, builds a
+test map through the real editing functions, and byte-checks the compiled WAD (region
+merging, door orientation, wall painting, lump layout). Run it with:
+
+```
+npm install jsdom
+node verify-blocks.js
+```
+
+All checks should pass; it also writes `blocks-test.wad` you can open in GZDoom.
 
 ## Limitations
 

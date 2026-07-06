@@ -206,7 +206,9 @@ const THING_CATS = [ // [category label, place-button label, hex color, [[id,nam
   ['Decorations', 'Place decoration', 0xb0a080, [
     [2035,'Exploding Barrel'],[2028,'Floor Lamp'],[34,'Candle'],[35,'Candelabra'],[44,'Tall Blue Torch'],
     [45,'Tall Green Torch'],[46,'Tall Red Torch'],[48,'Tech Column'],[30,'Tall Green Pillar'],
-    [32,'Tall Red Pillar'],[41,'Evil Eye'],[43,'Burnt Tree'],[54,'Large Brown Tree'],[15,'Dead Marine'],[10,'Gibs']]],
+    [32,'Tall Red Pillar'],[41,'Evil Eye'],[43,'Burnt Tree'],[54,'Large Brown Tree'],[15,'Dead Marine'],[10,'Gibs'],
+    [25,'Impaled Human'],[26,'Impaled Human (twitching)'],[27,'Skull on a Pole'],
+    [28,'Five Skulls (shish kebab)'],[29,'Pile of Skulls & Candles']]],
   ['Hanging Gore', 'Place gore', 0xa05060, [
     [63,'Hanging Victim (twitching)'],[59,'Hanging Victim (arms out)'],[61,'Hanging Victim (one-legged)'],
     [60,'Hanging Pair of Legs'],[62,'Hanging Leg']]],
@@ -236,22 +238,29 @@ const WALLMATS = [ // [label, wall texture, css color]
   ['Ash rock', 'ASHWALL2', '#4e4a46'],
   // murals (Doom II). Mural textures are wider than one block — paint consecutive
   // wall cells with the numbered pieces to assemble the full picture.
-  ['Icon of Sin 1', 'ZZZFACE1', '#8a5a48'],
-  ['Icon of Sin 2', 'ZZZFACE2', '#8a5a48'],
-  ['Icon of Sin 3', 'ZZZFACE3', '#8a5a48'],
-  ['Icon of Sin 4', 'ZZZFACE4', '#96604a'],
-  ['Icon of Sin 5 (brain hole)', 'ZZZFACE5', '#a2664c'],
-  ['Icon of Sin 6', 'ZZZFACE6', '#96604a'],
-  ['Icon of Sin 7', 'ZZZFACE7', '#8a5a48'],
-  ['Icon of Sin 8', 'ZZZFACE8', '#8a5a48'],
-  ['Icon of Sin 9', 'ZZZFACE9', '#8a5a48'],
-  ['Mural: Goat face', 'SP_FACE1', '#7a6a52'],
-  ['Mural: Hanging victims', 'SP_DUDE1', '#6a4a42'],
-  ['Mural: Hanging victims 2', 'SP_DUDE2', '#6a4a42'],
-  ['Mural: Impaled corpses', 'SP_DUDE4', '#6f4c44'],
-  ['Mural: Impaled corpses 2', 'SP_DUDE5', '#6f4c44'],
-  ['Mural: Skin face', 'SKINFACE', '#8a5a42'],
-  ['Mural: Spine wall', 'SKSPINE2', '#7a5a4a'],
+  // Icon of Sin: nine 256×128 tiles forming a 3×3 face (rows top to bottom)
+  ['Icon of Sin — top left horn (4×2)',        'ZZZFACE1', '#8a5a48'],
+  ['Icon of Sin — forehead / brain hole (4×2)','ZZZFACE2', '#a2664c'],
+  ['Icon of Sin — top right horn (4×2)',       'ZZZFACE3', '#8a5a48'],
+  ['Icon of Sin — left brow & eye (4×2)',      'ZZZFACE4', '#96604a'],
+  ['Icon of Sin — face center (4×2)',          'ZZZFACE5', '#96604a'],
+  ['Icon of Sin — right brow & eye (4×2)',     'ZZZFACE6', '#96604a'],
+  ['Icon of Sin — left jaw (4×2)',             'ZZZFACE7', '#8a5a48'],
+  ['Icon of Sin — mouth & chin (4×2)',         'ZZZFACE8', '#8a5a48'],
+  ['Icon of Sin — right jaw (4×2)',            'ZZZFACE9', '#8a5a48'],
+  ['Mural: Goat face (2×1.5)',                 'SP_FACE1', '#7a6a52'],
+  ['Mural: Hanging victims (2×2)',             'SP_DUDE1', '#6a4a42'],
+  ['Mural: Hanging victims 2 (2×2)',           'SP_DUDE2', '#6a4a42'],
+  ['Mural: Impaled corpses (1×2)',             'SP_DUDE4', '#6f4c44'],
+  ['Mural: Impaled corpses 2 (1×2)',           'SP_DUDE5', '#6f4c44'],
+  ['Mural: Skin face (4×2)',                   'SKINFACE', '#8a5a42'],
+  ['Mural: Spine wall (2×1)',                  'SKSPINE2', '#7a5a4a'],
+  ['Mural: Horned demon face — marble (2×2)',  'MARBFACE', '#5c7a64'],
+  ['Mural: Clawed demon face — marble (2×2)',  'MARBFAC2', '#5c7a64'],
+  ['Mural: Bloody demon face — marble (2×2)',  'MARBFAC3', '#5c7a64'],
+  ['Mural: Gargoyle — green stone (1×2)',      'GSTGARG', '#4f6a55'],
+  ['Mural: Lion face — green stone (1×2)',     'GSTLION', '#4f6a55'],
+  ['Mural: Satyr face — green stone (1×2)',    'GSTSATYR', '#4f6a55'],
 ];
 
 const $ = id => document.getElementById(id);
@@ -1024,6 +1033,26 @@ function thingMesh(t, color, avail) {
     }
     else if (new Set([48,30,32]).has(t)) add(new THREE.CylinderGeometry(10, 12, 44, 10), 22);
     else if (t===41) { add(new THREE.ConeGeometry(10, 14, 8), 7); add(new THREE.SphereGeometry(9, 10, 8), 24); }
+    else if (t===25 || t===26) {           // impaled human: stake + slumped body
+      add(new THREE.CylinderGeometry(1.8, 2.5, 52, 6), 26, new THREE.MeshLambertMaterial({ color: 0x5a4630 }));
+      const flesh = new THREE.MeshLambertMaterial({ color: 0x9a7a6a });
+      const body = add(new THREE.BoxGeometry(12, 20, 8), 38, flesh);
+      body.rotation.z = t===26 ? 0.28 : 0.15;
+      add(new THREE.SphereGeometry(4.5, 8, 6), 50, flesh);
+    }
+    else if (t===27) {                     // skull on a pole
+      add(new THREE.CylinderGeometry(1.5, 2, 40, 6), 20, new THREE.MeshLambertMaterial({ color: 0x5a4630 }));
+      add(new THREE.SphereGeometry(5.5, 8, 6), 44, new THREE.MeshLambertMaterial({ color: 0xd8d0c0 }));
+    }
+    else if (t===28) {                     // five skulls shish kebab
+      add(new THREE.CylinderGeometry(1.5, 2, 52, 6), 26, new THREE.MeshLambertMaterial({ color: 0x5a4630 }));
+      const bone = new THREE.MeshLambertMaterial({ color: 0xd8d0c0 });
+      for (let i=0;i<5;i++) add(new THREE.SphereGeometry(4.5, 8, 6), 14 + i*9, bone);
+    }
+    else if (t===29) {                     // pile of skulls and candles
+      add(new THREE.ConeGeometry(13, 16, 8), 8, new THREE.MeshLambertMaterial({ color: 0xd8d0c0 }));
+      add(new THREE.SphereGeometry(3, 6, 5), 18, new THREE.MeshLambertMaterial({ color: 0xffe9a0, emissive: 0xffe9a0, emissiveIntensity: 0.5 }));
+    }
     else if (t===43||t===54) {
       const s = t===54 ? 1.5 : 1;
       add(new THREE.CylinderGeometry(4*s, 6*s, 26*s, 8), 13*s, new THREE.MeshLambertMaterial({ color: 0x5a4630 }));
