@@ -6,7 +6,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <style>
   :root {
-    --bg:#1a1a1e; --panel:#242429; --border:#3a3a42; --text:#d8d8dc; 
+    --bg:#1a1a1e; --panel:#242429; --border:#3a3a42; --text:#d8d8dc;
     --dim:#8a8a92; --accent:#e05038; --sel:#ffd24a;
   }
   * { box-sizing:border-box; margin:0; padding:0; }
@@ -58,12 +58,14 @@
     <option value="SKY2">Sky 2 — grey city</option>
     <option value="SKY3">Sky 3 — red hell</option>
   </select>
+  <select id="borderSel" title="Texture of the map's outer boundary wall"></select>
   <label style="color:var(--dim)">Size</label>
   <input id="gw" type="number" value="32" min="8" max="64" style="width:54px">
   <span style="color:var(--dim)">×</span>
   <input id="gd" type="number" value="32" min="8" max="64" style="width:54px">
   <div class="sep"></div>
   <select id="levelSel" title="Current level — exit switches lead to the next one"></select>
+  <input id="lvlName" placeholder="Level name" style="width:104px" title="Name shown in-game on the automap">
   <button id="btnAddLevel" title="Add another level to the WAD">+ Level</button>
   <button id="btnDelLevel" title="Delete the current level">−</button>
   <div class="sep"></div>
@@ -89,6 +91,8 @@
       (thing → structure → one step of terrain, in that order).<br><br>
       <b>Drag</b> to orbit · <b>wheel</b> to zoom · <b>middle-drag / shift-drag / arrows / WASD</b> to pan.
       In Select mode, drag an object to move it to another cell.<br><br>
+      Cells tinted <b style="color:#ff6a5a">red</b> have under 56 units of headroom — the player
+      cannot fit there and will be stuck. Raise the ceiling or lower the terrain.<br><br>
       Heights are in Doom map units: the player is 56 tall (eye level 41) and can step up 24.
       So a 16 slab is a stair step, 32 is thigh-high (jumpable in modern ports, a ledge in vanilla),
       and each cell is 64×64 — about a meter and a half across.
@@ -122,6 +126,8 @@
         <option value="2">2×2 (4 cells)</option>
         <option value="3">3×3 (9 cells)</option>
         <option value="4">4×4 (16 cells)</option>
+        <option value="5">5×5 (25 cells)</option>
+        <option value="6">6×6 (36 cells)</option>
       </select>
     </div>
     <button class="tool" data-tool="erase"><span class="chip" style="background:#2a2a30"></span>Erase column</button>
@@ -228,6 +234,24 @@ const WALLMATS = [ // [label, wall texture, css color]
   ['Brick',    'BRICK7',   '#8a4a3a'],
   ['Computer', 'COMPBLUE', '#3a5faf'],
   ['Ash rock', 'ASHWALL2', '#4e4a46'],
+  // murals (Doom II). Mural textures are wider than one block — paint consecutive
+  // wall cells with the numbered pieces to assemble the full picture.
+  ['Icon of Sin 1', 'ZZZFACE1', '#8a5a48'],
+  ['Icon of Sin 2', 'ZZZFACE2', '#8a5a48'],
+  ['Icon of Sin 3', 'ZZZFACE3', '#8a5a48'],
+  ['Icon of Sin 4', 'ZZZFACE4', '#96604a'],
+  ['Icon of Sin 5 (brain hole)', 'ZZZFACE5', '#a2664c'],
+  ['Icon of Sin 6', 'ZZZFACE6', '#96604a'],
+  ['Icon of Sin 7', 'ZZZFACE7', '#8a5a48'],
+  ['Icon of Sin 8', 'ZZZFACE8', '#8a5a48'],
+  ['Icon of Sin 9', 'ZZZFACE9', '#8a5a48'],
+  ['Mural: Goat face', 'SP_FACE1', '#7a6a52'],
+  ['Mural: Hanging victims', 'SP_DUDE1', '#6a4a42'],
+  ['Mural: Hanging victims 2', 'SP_DUDE2', '#6a4a42'],
+  ['Mural: Impaled corpses', 'SP_DUDE4', '#6f4c44'],
+  ['Mural: Impaled corpses 2', 'SP_DUDE5', '#6f4c44'],
+  ['Mural: Skin face', 'SKINFACE', '#8a5a42'],
+  ['Mural: Spine wall', 'SKSPINE2', '#7a5a4a'],
 ];
 
 const $ = id => document.getElementById(id);
@@ -256,14 +280,27 @@ fillThings();
 let paintSurf = 0, paintWall = 0;
 SURFS.forEach(([label], i) => $('surfSel').add(new Option(label, i)));
 WALLMATS.forEach(([label], i) => $('wallSel').add(new Option(label, i)));
+const BASE_WALLS = 9;   // plain materials only — murals are for painting, not the boundary
+WALLMATS.slice(0, BASE_WALLS).forEach(([label], i) => $('borderSel').add(new Option('Border: ' + label, i)));
+$('borderSel').onchange = () => autosave();
+$('lvlName').onchange = () => autosave();
 $('surfSel').onchange = () => { paintSurf = +$('surfSel').value; tool = 'paint'; syncTools(); };
 $('wallSel').onchange = () => { paintWall = +$('wallSel').value; tool = 'wpaint'; syncTools(); };
-document.querySelectorAll('.tool').forEach(b => b.onclick = () => { tool = b.dataset.tool; syncTools(); });
+document.querySelectorAll('.tool').forEach(b => b.onclick = () => {
+  tool = b.dataset.tool;
+  if (b.dataset.dir) terraDir = b.dataset.dir;
+  syncTools();
+});
+$('stepMinus').onclick = () => { terraStep = Math.max(16, terraStep - 16); $('stepLbl').textContent = terraStep; syncTools(); };
+$('stepPlus').onclick = () => { terraStep = Math.min(128, terraStep + 16); $('stepLbl').textContent = terraStep; syncTools(); };
+$('brushSel').onchange = () => { brushN = +$('brushSel').value; syncTools(); };
 function syncTools() {
-  document.querySelectorAll('.tool').forEach(b => b.classList.toggle('active', b.dataset.tool === tool));
+  document.querySelectorAll('.tool').forEach(b => b.classList.toggle('active',
+    b.dataset.tool === tool && (!b.dataset.dir || b.dataset.dir === terraDir)));
   $('surfChip').style.background = SURFS[paintSurf][2];
   $('wallChip').style.background = WALLMATS[paintWall][2];
   $('stTool').textContent = tool === 'select' ? 'select: click an object to inspect it'
+    : tool === 'terrain' ? 'terrain: ' + terraDir + ' ' + terraStep + ' · brush ' + brushN + '×' + brushN
     : tool === 'paint' ? 'paint floor: ' + SURFS[paintSurf][0]
     : tool === 'wpaint' ? 'paint wall: ' + WALLMATS[paintWall][0]
     : tool === 'fillfloor' ? 'fill floor: ' + SURFS[paintSurf][0]
@@ -289,7 +326,8 @@ function undo() {
 const LS_KEY = 'doomblocks-autosave';
 function clampDim(v){ return Math.max(8, Math.min(64, Math.round(v)||32)); }
 function storeCur() {
-  levels[cur] = { W, D, ceil:+$('ceilH').value, sky:$('sky').value, grid };
+  levels[cur] = { W, D, ceil:+$('ceilH').value, sky:$('sky').value,
+    name:$('lvlName').value, border:+$('borderSel').value||0, grid };
 }
 function autosave() {
   try {
@@ -304,6 +342,8 @@ function applyLevelState(L) {   // set globals + inputs from a level (no redraw)
   $('gw').value = W; $('gd').value = D;
   $('ceilH').value = L.ceil || 128;
   $('sky').value = L.sky === true ? 'SKY1' : (L.sky || '');   // old saves used a boolean
+  $('lvlName').value = L.name || '';
+  $('borderSel').value = Math.min(L.border || 0, BASE_WALLS - 1);
 }
 function refreshView() {
   $('infoGrid').textContent = W + ' × ' + D + ' cells (64 units each)';
@@ -332,11 +372,11 @@ function freshLevel() {   // starter room so every level exports playable
   for (let y=10;y<=20;y++){ wall(10,y); wall(20,y); }
   g[10*32+15].wall = false; g[10*32+15].door = true;
   g[15*32+15].thing = 1;
-  return { W:32, D:32, ceil:128, sky:'', grid:g };
+  return { W:32, D:32, ceil:128, sky:'', name:'', border:0, grid:g };
 }
 function adoptProject(j) {
   const norm = L => ({ W:clampDim(L.W), D:clampDim(L.D), ceil:L.ceil||128,
-    sky: L.sky === true ? 'SKY1' : (L.sky || ''), grid:L.grid });
+    sky: L.sky === true ? 'SKY1' : (L.sky || ''), name:L.name||'', border:L.border||0, grid:L.grid });
   if (j.levels && j.levels.length) {
     levels = j.levels.map(norm);
     cur = Math.min(j.cur || 0, levels.length - 1);
@@ -399,9 +439,14 @@ function applyTool(x, y) {
   }
   checkpoint();
   const maxH = Math.min(HMAX, ceilUnits());
-  if (tool==='raise') { c.wall=c.door=c.exit=false; c.h = Math.min(maxH, c.h+2); }
-  else if (tool==='slab') { c.wall=c.door=c.exit=false; c.h = Math.min(maxH, c.h+1); }
-  else if (tool==='lower') { c.h = Math.max(0, c.h-1); }
+  if (tool==='terrain') {
+    const delta = (terraDir==='raise' ? 1 : -1) * (terraStep/HU);
+    for (const [bx,by] of brushCells(x,y)) {
+      const cc = grid[gi(bx,by)];
+      if (cc.wall || cc.door || cc.exit) continue;   // structures are left alone; use Erase first
+      cc.h = Math.max(0, Math.min(maxH, cc.h + delta));
+    }
+  }
   else if (tool==='erase') { Object.assign(c, newCol()); }
   else if (tool==='wall') { c.wall=true; c.door=c.exit=false; c.thing=0; }
   else if (tool==='door') { c.door=true; c.wall=c.exit=false; c.thing=0; }
@@ -562,11 +607,12 @@ function compile() {
   // solid side wins (you painted that wall block); between open cells the taller floor wins
   const solidCell = (x,y) => !inb(x,y) || grid[gi(x,y)].wall || grid[gi(x,y)].exit;
   const wm = (x,y) => WALLMATS[grid[gi(x,y)].wmat||0][1];
+  const borderTex = (WALLMATS[+$('borderSel').value] || WALLMATS[0])[1];
   function edgeTex(xa,ya, xb,yb) {
     const as = solidCell(xa,ya), bs = solidCell(xb,yb);
     if (as && bs) return WALLTEX;
-    if (as) return inb(xa,ya) ? wm(xa,ya) : wm(xb,yb);
-    if (bs) return inb(xb,yb) ? wm(xb,yb) : wm(xa,ya);
+    if (as) return inb(xa,ya) ? wm(xa,ya) : borderTex;
+    if (bs) return inb(xb,yb) ? wm(xb,yb) : borderTex;
     const pa = props[gi(xa,ya)], pb = props[gi(xb,yb)];
     return (pa && pb && pa.floorh < pb.floorh) ? wm(xb,yb) : wm(xa,ya);
   }
@@ -684,9 +730,14 @@ function mapLumps(m, mapName) {
     ['VERTEXES',VERTEXES],['SEGS',EMPTY],['SSECTORS',EMPTY],['NODES',EMPTY],['SECTORS',SECTORS],
     ['REJECT',EMPTY],['BLOCKMAP',EMPTY]];
 }
-function mapinfoLump(entries) {  // ZDoom-family MAPINFO: per-level sky regardless of slot
+function mapinfoLump(entries) {  // ZDoom-family MAPINFO: level names, skies, progression
   let txt = '';
-  for (const e of entries) txt += 'map ' + e.slot + ' "DoomBlocks"\n{\n  sky1 = "' + e.sky + '"\n}\n';
+  for (const e of entries) {
+    txt += 'map ' + e.slot + ' "' + (e.name || e.slot).replace(/"/g, '') + '"\n{\n';
+    if (e.sky) txt += '  sky1 = "' + e.sky + '"\n';
+    if (e.next) txt += '  next = "' + e.next + '"\n';
+    txt += '}\n';
+  }
   const enc = new Uint8Array(txt.length);
   for (let i=0;i<txt.length;i++) enc[i] = txt.charCodeAt(i);
   return ['MAPINFO', enc.buffer];
@@ -726,13 +777,27 @@ $('btnExport').onclick = () => {
     const slot = multi ? 'MAP' + String(i+1).padStart(2,'0') : $('mapName').value;
     if (!m.sectors.length) problems.push(slot + ': no open space');
     if (!m.things.some(t => t.type === 1)) problems.push(slot + ': no Player 1 Start');
-    maps.push({ m, slot, sky: $('sky').value });
+    // headroom check: the player is 56 tall — anything on a cramped cell is stuck
+    const cu = ceilUnits()*HU;
+    let cramped = 0, crampedStart = false;
+    for (let yy=0; yy<D; yy++) for (let xx=0; xx<W; xx++) {
+      const cc = grid[gi(xx,yy)];
+      if (cc.wall || cc.exit || cc.door || !cc.thing) continue;
+      if (cu - Math.min(cc.h*HU, cu) < 56) { cramped++; if (cc.thing === 1) crampedStart = true; }
+    }
+    if (crampedStart) problems.push(slot + ': Player 1 Start has under 56 units of headroom — the player will be stuck');
+    else if (cramped) problems.push(slot + ': ' + cramped + ' thing(s) on cells with under 56 units of headroom (red-tinted in the editor)');
+    maps.push({ m, slot, sky: $('sky').value, name: L.name || '' });
   });
   applyLevelState(levels[cur]);                // restore the level being edited
   if (problems.length && !confirm(problems.join('\n')+'\n\nExport anyway?')) return;
   const lumps = maps.flatMap(x => mapLumps(x.m, x.slot));
-  const skied = maps.filter(x => x.sky);
-  if (skied.length) lumps.push(mapinfoLump(skied));
+  lumps.push(mapinfoLump(maps.map((x, i) => ({
+    slot: x.slot,
+    name: x.name || (multi ? 'Level ' + (i+1) : x.slot),
+    sky: x.sky,
+    next: i < maps.length - 1 ? maps[i+1].slot : null,
+  }))));
   download(new Blob([buildWad(lumps)], {type:'application/octet-stream'}),
     multi ? 'episode.wad' : $('mapName').value.toLowerCase()+'.wad');
   $('stMsg').textContent = 'exported ' + maps.length + ' level' + (multi ? 's' : '') +
@@ -861,6 +926,22 @@ function rebuild() {
   g.computeVertexNormals();
   gl.world = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors:true }));
   gl.scene.add(gl.world);
+  // headroom warning: tint cells red where the player (56 tall) can't fit
+  if (gl.warn) { gl.scene.remove(gl.warn); gl.warn.geometry.dispose(); }
+  const wpos = [];
+  for (let y=0;y<D;y++) for (let x=0;x<W;x++) {
+    const c = grid[gi(x,y)];
+    if (c.wall || c.exit || c.door) continue;
+    const top = Math.min(c.h*HU, ceil);
+    if (ceil - top >= 56) continue;
+    const X0=x*CS, X1=(x+1)*CS, Z0=-(y*CS), Z1=-((y+1)*CS), Y=top+0.6;
+    wpos.push(X0,Y,Z0, X1,Y,Z0, X1,Y,Z1,  X0,Y,Z0, X1,Y,Z1, X0,Y,Z1);
+  }
+  const wg = new THREE.BufferGeometry();
+  wg.setAttribute('position', new THREE.Float32BufferAttribute(wpos,3));
+  gl.warn = new THREE.Mesh(wg, new THREE.MeshBasicMaterial({
+    color:0xff4040, transparent:true, opacity:0.35, depthWrite:false, side:THREE.DoubleSide }));
+  gl.scene.add(gl.warn);
   // things
   gl.thingGroup = new THREE.Group();
   for (let y=0;y<D;y++) for (let x=0;x<W;x++) {
@@ -1023,7 +1104,10 @@ function bindMouse(cv) {
     if (cell && !down) {
       gl.ghost.visible = true;
       const c = grid[gi(cell.x,cell.y)];
-      gl.ghost.position.set(cell.x*CS+CS/2, colTop(c, ceilUnits()*HU)+4, -(cell.y*CS+CS/2));
+      const n = tool === 'terrain' ? brushN : 1;   // show the brush footprint
+      const off = Math.floor((n-1)/2), x0 = cell.x - off, y0 = cell.y - off;
+      gl.ghost.scale.set(n, 1, n);
+      gl.ghost.position.set((x0 + n/2)*CS, colTop(c, ceilUnits()*HU)+4, -((y0 + n/2)*CS));
       $('stCell').textContent = 'cell '+cell.x+','+cell.y+'  floor '+(c.h*HU)+
         (c.wall?'  [wall]':c.door?'  [door]':c.exit?'  [exit]':'')+
         (c.thing?'  ['+(THING_TYPES.find(t=>t[0]===c.thing)||['?','?'])[1]+' → '+
@@ -1039,6 +1123,7 @@ function bindMouse(cv) {
       if (cell && gl.ready) {
         const cc = grid[gi(cell.x, cell.y)];
         gl.ghost.visible = true;
+        gl.ghost.scale.set(1, 1, 1);
         gl.ghost.position.set(cell.x*CS+CS/2, colTop(cc, ceilUnits()*HU)+4, -(cell.y*CS+CS/2));
       }
       return;
