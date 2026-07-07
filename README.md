@@ -13,7 +13,7 @@ and export a playable WAD. No installation: open the link above or the file in a
    (the map boundary is itself a solid wall).
 2. Pick tools from the right sidebar, click cells to build. Right-click removes
    (thing → structure → one step of terrain, in that order).
-3. Place a **Player 1 Start** (Things → Starts) — export requires one and will abort without it.
+3. Place a **Player 1 Start** (Objects → Starts) — export requires one and will abort without it.
 4. Navigation: drag to orbit, wheel to zoom, middle-drag / shift-drag / arrow keys / WASD to pan.
 5. Export WAD, then play it: `gzdoom -file episode.wad`
 
@@ -57,15 +57,15 @@ and can automatically step up **24**. Each grid cell is **64×64** — roughly a
   top, jaw across the bottom; the hole into the brain is in the forehead tile). A full row
   is 12 cells wide — paint the three tiles of one row side by side. If a piece looks
   misplaced in-game, swap it within its row; the original arrangement isn't documented.
-- **Things** — two dropdowns: category (Starts, Enemies, Weapons & Ammo, Pickups, Keys,
-  Decorations, Hanging Gore, Boss & Special), then the item. Markers use recognizable shapes
+- **Objects** — two dropdowns: category (Starts, Enemies, Weapons & Ammo, Pickups, Keys,
+  Decorations, Hanging Gore, Boss & Special, Teleporters), then the item. Markers use recognizable shapes
   scaled to real size; big monsters show a translucent footprint disc (a Spiderdemon needs a
   4-cell-wide clearing). **Rotate thing** turns whatever you click by 45°; the marker's nose
   shows facing.
 
 ## Teleporters
 
-Teleporters are placed as objects: **Things → Teleporters**, numbered 1–4. Endpoints with
+Teleporters are placed as objects: **Objects → Teleporters**, numbered 1–4. Endpoints with
 the same number form a network — stepping on any one sends the player to its **nearest
 same-number partner**, so two make a two-way pair and three or more make a chain. Each
 number is an independent network and maps to one of Doom's four stock pad textures
@@ -120,8 +120,9 @@ reads the game's palette, floor flats, wall textures, and monster/item sprites d
 the file — nothing is uploaded anywhere — and switches the 3D view to the real thing: painted
 walls and murals render with their actual textures, floors show their flats, and things
 appear as their in-game sprites (billboarded, like the engine draws them; Spectres are even
-translucent). Anything the WAD doesn't contain falls back to the colored shapes. The WAD
-isn't stored, so reload it after reopening the page.
+translucent). Anything the WAD doesn't contain falls back to the colored shapes. The WAD is
+cached in your browser's local database, so it's restored automatically on your next visit;
+loading a different WAD replaces the cached one.
 
 ## Limitations
 

@@ -18,12 +18,14 @@
   button.active { background:var(--accent); border-color:var(--accent); color:#fff; }
   .sep { width:1px; height:22px; background:var(--border); margin:0 4px; }
   #main { flex:1; display:flex; min-height:0; }
-  #canvasWrap { flex:1; position:relative; }
+  #canvasWrap { flex:1 1 0; min-width:0; overflow:hidden; position:relative; }
   canvas { display:block; }
-  #sidebar { width:230px; background:var(--panel); border-left:1px solid var(--border); padding:12px; overflow-y:auto; }
-  #sidebar h3 { font-size:11px; text-transform:uppercase; color:var(--dim); margin:14px 0 6px; letter-spacing:.5px; }
-  #sidebar h3:first-child { margin-top:0; }
+  #sidebar { width:230px; flex:0 0 230px; background:var(--panel); border-left:1px solid var(--border); padding:12px; overflow-y:auto; }
+  #leftbar { width:212px; flex:0 0 212px; background:var(--panel); border-right:1px solid var(--border); padding:12px; overflow-y:auto; }
+  #sidebar h3, #leftbar h3 { font-size:11px; text-transform:uppercase; color:var(--dim); margin:14px 0 6px; letter-spacing:.5px; }
+  #sidebar h3:first-child, #leftbar h3:first-child { margin-top:0; }
   .tool { display:flex; align-items:center; gap:8px; width:100%; margin-bottom:4px; text-align:left; padding:6px 8px; }
+  .opts { margin:2px 0 8px; padding:8px 8px 2px; background:#1e1e23; border:1px solid var(--border); border-radius:6px; }
   .chip { width:14px; height:14px; border-radius:3px; flex:0 0 14px; border:1px solid rgba(255,255,255,.25); }
   #status { padding:4px 10px; background:var(--panel); border-top:1px solid var(--border); color:var(--dim); font-size:12px; display:flex; gap:16px; }
   #help { position:absolute; top:10px; left:10px; background:rgba(30,30,35,.92); border:1px solid var(--border); border-radius:8px; padding:12px 26px 12px 16px; font-size:12px; color:var(--dim); max-width:360px; pointer-events:none; }
@@ -49,34 +51,40 @@
   <button id="btnSave">Save Project</button>
   <button id="btnLoad">Open Project</button>
   <input type="file" id="fileInput" accept=".json" class="hidden">
-  <button id="btnIwad" title="Load doom2.wad or freedoom2.wad to preview real textures & sprites (never uploaded anywhere)">Load IWAD</button>
+  <button id="btnIwad" title="Load doom2.wad or freedoom2.wad to preview real textures & sprites (never uploaded anywhere)">Open IWAD</button>
   <input type="file" id="iwadFile" accept=".wad" class="hidden">
   <button id="btnWalk" title="Walk the map in first person — WASD + mouse, Space/E to use doors & switches">Walk</button>
-  <div class="sep"></div>
-  <label style="color:var(--dim)">Ceiling</label>
-  <input id="ceilH" type="number" value="128" min="64" max="480" step="16" style="width:64px">
-  <select id="sky" title="Open-air ceiling and which sky texture to show (Doom II skies)">
-    <option value="">Indoors (no sky)</option>
-    <option value="SKY1">Sky 1 — brown city</option>
-    <option value="SKY2">Sky 2 — grey city</option>
-    <option value="SKY3">Sky 3 — red hell</option>
-  </select>
-  <select id="borderSel" title="Texture of the map's outer boundary wall"></select>
-  <label style="color:var(--dim)">Size</label>
-  <input id="gw" type="number" value="32" min="8" max="64" style="width:54px">
-  <span style="color:var(--dim)">×</span>
-  <input id="gd" type="number" value="32" min="8" max="64" style="width:54px">
-  <div class="sep"></div>
-  <select id="levelSel" title="Current level — exit switches lead to the next one"></select>
-  <input id="lvlName" placeholder="Level name" style="width:104px" title="Name shown in-game on the automap">
-  <button id="btnAddLevel" title="Add another level to the WAD">+ Level</button>
-  <button id="btnDelLevel" title="Delete the current level">−</button>
-  <div class="sep"></div>
-  <select id="mapName"><option>MAP01</option><option>E1M1</option></select>
   <button id="btnExport" style="background:var(--accent);border-color:var(--accent);color:#fff">Export WAD</button>
   <button id="btnHelp" title="Show/hide help">?</button>
 </div>
 <div id="main">
+  <div id="leftbar">
+    <h3>Level</h3>
+    <select id="levelSel" style="width:100%" title="Current level — exit switches lead to the next one"></select>
+    <input id="lvlName" placeholder="Level name" style="width:100%;margin-top:4px" title="Name shown in-game on the automap">
+    <div style="display:flex;gap:4px;margin-top:4px">
+      <button id="btnAddLevel" style="flex:1" title="Add another level to the WAD">+ Level</button>
+      <button id="btnDelLevel" title="Delete the current level">−</button>
+    </div>
+    <h3>Level settings</h3>
+    <div class="row"><label>Ceiling</label>
+      <input id="ceilH" type="number" value="128" min="64" max="480" step="16" style="flex:1"></div>
+    <div class="row"><label>Sky</label>
+      <select id="sky" style="flex:1" title="Open-air ceiling and which sky texture to show (Doom II skies)">
+        <option value="">Indoors</option>
+        <option value="SKY1">Sky 1 — brown city</option>
+        <option value="SKY2">Sky 2 — grey city</option>
+        <option value="SKY3">Sky 3 — red hell</option>
+      </select></div>
+    <div class="row"><label>Border</label>
+      <select id="borderSel" style="flex:1" title="Texture of the map's outer boundary wall"></select></div>
+    <div class="row"><label>Size</label>
+      <input id="gw" type="number" value="32" min="8" max="64" style="width:50px">
+      <span style="color:var(--dim)">×</span>
+      <input id="gd" type="number" value="32" min="8" max="64" style="width:50px"></div>
+    <div class="row"><label>Slot</label>
+      <select id="mapName" style="flex:1"><option>MAP01</option><option>E1M1</option></select></div>
+  </div>
   <div id="canvasWrap">
     <canvas id="cv"></canvas>
     <div id="noGL">The 3D view needs Three.js from the internet.<br>Connect and reload this page.</div>
@@ -104,7 +112,7 @@
       Terrain steps of 16 are walkable; 32 needs a Slab stair in between. Wall blocks reach the
       ceiling. Put a <b>Door</b> in a gap between walls. The <b>Exit switch</b> is a wall the player
       "uses" to end the level. Add a <b>Player start</b> before exporting.<br><br>
-      <b>Teleporters</b> are objects (Things → Teleporters), numbered 1–4. Place two or more with
+      <b>Teleporters</b> are objects (Objects → Teleporters), numbered 1–4. Place two or more with
       the same number and each sends the player to its nearest same-number partner — chains of
       3, 4, or more work too. Rotate one to set which way the player faces on arrival. Each
       number uses one of Doom's four pad textures, added automatically on export.<br><br>
@@ -121,20 +129,27 @@
       <button class="tool" data-tool="terrain" data-dir="raise" style="flex:1" title="Click to raise terrain by the step"><span class="chip" style="background:#a5abb1"></span>Raise</button>
       <button class="tool" data-tool="terrain" data-dir="lower" style="flex:1" title="Click to lower terrain by the step"><span class="chip" style="background:#4a4f54"></span>Lower</button>
     </div>
-    <div class="row" style="margin-top:6px"><label>Step</label>
-      <button id="stepMinus" title="16 = one stair step; above 24 the player can't walk up">−</button>
-      <span id="stepLbl" style="min-width:34px;text-align:center;color:var(--text)">32</span>
-      <button id="stepPlus">+</button>
+    <h3>Ceiling</h3>
+    <div style="display:flex;gap:4px">
+      <button class="tool" data-tool="ceil" data-dir="lower" style="flex:1" title="Lower the ceiling — put a 128 ceiling next to a door for a wall above it"><span class="chip" style="background:#565b68"></span>Lower</button>
+      <button class="tool" data-tool="ceil" data-dir="raise" style="flex:1" title="Raise a lowered ceiling back toward the level ceiling"><span class="chip" style="background:#7d838f"></span>Raise</button>
     </div>
-    <div class="row"><label>Brush</label>
-      <select id="brushSel" style="flex:1">
-        <option value="1">1×1 (1 cell)</option>
-        <option value="2">2×2 (4 cells)</option>
-        <option value="3">3×3 (9 cells)</option>
-        <option value="4">4×4 (16 cells)</option>
-        <option value="5">5×5 (25 cells)</option>
-        <option value="6">6×6 (36 cells)</option>
-      </select>
+    <div id="optTerrain" class="opts hidden">
+      <div class="row"><label>Step</label>
+        <button id="stepMinus" title="16 = one stair step; above 24 the player can't walk up">−</button>
+        <span id="stepLbl" style="min-width:34px;text-align:center;color:var(--text)">32</span>
+        <button id="stepPlus">+</button>
+      </div>
+      <div class="row"><label>Brush</label>
+        <select id="brushSel" style="flex:1">
+          <option value="1">1×1 (1 cell)</option>
+          <option value="2">2×2 (4 cells)</option>
+          <option value="3">3×3 (9 cells)</option>
+          <option value="4">4×4 (16 cells)</option>
+          <option value="5">5×5 (25 cells)</option>
+          <option value="6">6×6 (36 cells)</option>
+        </select>
+      </div>
     </div>
     <button class="tool" data-tool="erase"><span class="chip" style="background:#2a2a30"></span>Erase column</button>
     <h3>Structure</h3>
@@ -142,22 +157,28 @@
     <button class="tool" data-tool="door"><span class="chip" style="background:#c9a13b"></span>Door</button>
     <button class="tool" data-tool="exit"><span class="chip" style="background:#3fae5a"></span>Exit switch</button>
     <h3>Floor paint</h3>
-    <select id="surfSel" style="width:100%"></select>
-    <div style="display:flex;gap:4px;margin-top:6px">
+    <div style="display:flex;gap:4px">
       <button class="tool" data-tool="paint" style="flex:1"><span class="chip" id="surfChip"></span>Paint</button>
       <button class="tool" data-tool="fillfloor" style="flex:1" title="Flood-fill the connected area of matching floor">Fill</button>
     </div>
+    <div id="optFloor" class="opts hidden">
+      <select id="surfSel" style="width:100%"></select>
+    </div>
     <h3>Wall paint</h3>
-    <select id="wallSel" style="width:100%"></select>
-    <div style="display:flex;gap:4px;margin-top:6px">
+    <div style="display:flex;gap:4px">
       <button class="tool" data-tool="wpaint" style="flex:1"><span class="chip" id="wallChip"></span>Paint</button>
       <button class="tool" data-tool="fillwall" style="flex:1" title="Flood-fill the connected run of matching wall blocks">Fill</button>
     </div>
-    <h3>Things</h3>
-    <select id="catSel" style="width:100%"></select>
-    <select id="thingSel" style="width:100%;margin-top:4px"></select>
-    <button class="tool" data-tool="thing" id="placeBtn" style="margin-top:6px"><span class="chip" id="thingChip" style="background:#4aa8ff"></span><span id="placeLbl">Place thing</span></button>
-    <button class="tool" data-tool="rotate" title="Click a placed thing to turn it 45° counter-clockwise"><span class="chip" style="background:#d8d8dc"></span>Rotate thing (45°)</button>
+    <div id="optWall" class="opts hidden">
+      <select id="wallSel" style="width:100%"></select>
+    </div>
+    <h3>Objects</h3>
+    <button class="tool" data-tool="thing" id="placeBtn"><span class="chip" id="thingChip" style="background:#4aa8ff"></span>Place Object</button>
+    <div id="optThing" class="opts hidden">
+      <select id="catSel" style="width:100%"></select>
+      <select id="thingSel" style="width:100%;margin-top:4px"></select>
+    </div>
+    <button class="tool" data-tool="rotate" title="Click a placed object to turn it 45° counter-clockwise; new objects keep the last rotation"><span class="chip" style="background:#d8d8dc"></span>Rotate Object (45°)</button>
     <h3>Info</h3>
     <div class="row"><label>Grid</label><span id="infoGrid" style="color:var(--dim)"></span></div>
     <div class="row"><label>Blocks</label><span id="infoBlocks" style="color:var(--dim)">0</span></div>
@@ -171,7 +192,7 @@
 let W = 32, D = 32;                           // grid size (editable)
 const CS = 64, HU = 16;                       // cell size, height unit
 const HMAX = 28;                              // max terrain in height-units (448)
-function newCol(){ return { h:0, wall:false, door:false, exit:false, surf:0, wmat:0, thing:0, tele:0 }; }
+function newCol(){ return { h:0, ch:0, wall:false, door:false, exit:false, surf:0, wmat:0, thing:0, tele:0 }; }
 let grid = Array.from({length:W*D}, newCol);
 let levels = [], cur = 0;                     // multi-level project state
 const gi = (x,y) => y*W + x;
@@ -278,6 +299,7 @@ const WALLMATS = [ // [label, wall texture, css color]
 const $ = id => document.getElementById(id);
 let tool = 'terrain';
 let terraDir = 'raise', terraStep = 32, brushN = 1;
+let stickyAng = null;   // once the user rotates something, new placements reuse that facing
 const TELE_IDX = SURFS.findIndex(s => s[1] === 'GATE1');    // legacy painted pads
 const ARRIVE_IDX = SURFS.findIndex(s => s[1] === 'GATE2');
 function brushCells(x, y) {   // N×N brush centered on the clicked cell (clipped to grid)
@@ -291,10 +313,9 @@ function brushCells(x, y) {   // N×N brush centered on the clicked cell (clippe
 $('infoGrid').textContent = W + ' × ' + D + ' cells (64 units each)';
 THING_CATS.forEach(([label], i) => $('catSel').add(new Option(label, i)));
 function fillThings() {
-  const [, btnLabel, color, items] = THING_CATS[+$('catSel').value];
+  const [,, color, items] = THING_CATS[+$('catSel').value];
   $('thingSel').innerHTML = '';
   for (const [id,name] of items) $('thingSel').add(new Option(name, id));
-  $('placeLbl').textContent = btnLabel;
   $('thingChip').style.background = '#' + color.toString(16).padStart(6,'0');
 }
 $('catSel').onchange = () => { fillThings(); tool = 'thing'; syncTools(); };
@@ -307,7 +328,7 @@ SURFS.forEach(([label], i) => {
 });
 WALLMATS.forEach(([label], i) => $('wallSel').add(new Option(label, i)));
 const BASE_WALLS = 9;   // plain materials only — murals are for painting, not the boundary
-WALLMATS.slice(0, BASE_WALLS).forEach(([label], i) => $('borderSel').add(new Option('Border: ' + label, i)));
+WALLMATS.slice(0, BASE_WALLS).forEach(([label], i) => $('borderSel').add(new Option(label, i)));
 $('borderSel').onchange = () => autosave();
 $('lvlName').onchange = () => autosave();
 $('surfSel').onchange = () => { paintSurf = +$('surfSel').value; tool = 'paint'; syncTools(); };
@@ -323,10 +344,16 @@ $('brushSel').onchange = () => { brushN = +$('brushSel').value; syncTools(); };
 function syncTools() {
   document.querySelectorAll('.tool').forEach(b => b.classList.toggle('active',
     b.dataset.tool === tool && (!b.dataset.dir || b.dataset.dir === terraDir)));
+  // each tool's options are only shown while that tool is active
+  $('optTerrain').classList.toggle('hidden', tool !== 'terrain' && tool !== 'ceil');
+  $('optFloor').classList.toggle('hidden', tool !== 'paint' && tool !== 'fillfloor');
+  $('optWall').classList.toggle('hidden', tool !== 'wpaint' && tool !== 'fillwall');
+  $('optThing').classList.toggle('hidden', tool !== 'thing');
   $('surfChip').style.background = SURFS[paintSurf][2];
   $('wallChip').style.background = WALLMATS[paintWall][2];
   $('stTool').textContent = tool === 'select' ? 'select: click an object to inspect it'
     : tool === 'terrain' ? 'terrain: ' + terraDir + ' ' + terraStep + ' · brush ' + brushN + '×' + brushN
+    : tool === 'ceil' ? 'ceiling: ' + terraDir + ' ' + terraStep + ' · brush ' + brushN + '×' + brushN
     : tool === 'paint' ? 'paint floor: ' + SURFS[paintSurf][0]
     : tool === 'wpaint' ? 'paint wall: ' + WALLMATS[paintWall][0]
     : tool === 'fillfloor' ? 'fill floor: ' + SURFS[paintSurf][0]
@@ -471,6 +498,15 @@ function applyTool(x, y) {
       cc.h = Math.max(0, Math.min(maxH, cc.h + delta));
     }
   }
+  else if (tool==='ceil') {
+    const delta = (terraDir==='lower' ? 1 : -1) * (terraStep/HU);
+    for (const [bx,by] of brushCells(x,y)) {
+      const cc = grid[gi(bx,by)];
+      if (cc.wall || cc.door || cc.exit) continue;
+      const maxDrop = Math.max(0, ceilUnits() - cc.h);   // ceiling can descend to the floor
+      cc.ch = Math.max(0, Math.min(maxDrop, (cc.ch||0) + delta));
+    }
+  }
   else if (tool==='erase') { Object.assign(c, newCol()); }
   else if (tool==='wall') { c.wall=true; c.door=c.exit=false; c.thing=0; }
   else if (tool==='door') { c.door=true; c.wall=c.exit=false; c.thing=0; }
@@ -481,10 +517,10 @@ function applyTool(x, y) {
   else if (tool==='thing') {
     const t = +$('thingSel').value;
     if (t===1) for (const o of grid) if (o.thing===1) o.thing=0; // one player start
-    c.wall=c.door=c.exit=false; c.thing = t; c.ang = defAng(t);
+    c.wall=c.door=c.exit=false; c.thing = t; c.ang = stickyAng ?? defAng(t);
   }
   else if (tool==='rotate') {
-    if (c.thing) c.ang = ((c.ang ?? defAng(c.thing)) + 45) % 360;
+    if (c.thing) { c.ang = ((c.ang ?? defAng(c.thing)) + 45) % 360; stickyAng = c.ang; }
   }
   rebuild();
 }
@@ -561,7 +597,8 @@ function compile() {
     if (!c.door) {
       const s = SURFS[c.surf];
       const tp = isTp(c.thing);   // teleporter object: its cell becomes a GATE pad sector
-      props[gi(x,y)] = { floorh: Math.min(c.h*HU, ceil), ceilh: ceil,
+      const fh = Math.min(c.h*HU, ceil);
+      props[gi(x,y)] = { floorh: fh, ceilh: Math.max(fh, ceil - (c.ch||0)*HU),
         floort: tp ? 'GATE' + (c.thing - TP_MIN + 1) : s[1],
         ceilt: sky ? 'F_SKY1' : 'CEIL3_5', light: 192, special: tp ? 0 : s[3], tag: 0, door: false };
     }
@@ -854,13 +891,13 @@ $('btnExport').onclick = () => {
     // legacy painted pads without a landing
     const hasPad = grid.some(c => !c.wall && !c.exit && !c.door && c.surf === TELE_IDX && !isTp(c.thing));
     if (hasPad && !m.linedefs.some(l => l.special === 97))
-      problems.push(slot + ': teleport pad(s) have nowhere to go — place a Teleport Landing (Things → Starts) off the pad');
+      problems.push(slot + ': teleport pad(s) have nowhere to go — place a Teleport Landing (Objects → Starts) off the pad');
     maps.push({ m, slot, sky: $('sky').value, name: L.name || '' });
   });
   applyLevelState(levels[cur]);                // restore the level being edited
   if (noStart.length) {                        // hard requirement: the map can't launch without it
     alert('Export aborted — no Player 1 Start on: ' + noStart.join(', ') +
-      '.\n\nPlace one via Things → Starts → Player 1 Start.');
+      '.\n\nPlace one via Objects → Starts → Player 1 Start.');
     return;
   }
   if (problems.length && !confirm(problems.join('\n')+'\n\nExport anyway?')) return;
@@ -1054,20 +1091,59 @@ function getSprite(lname) {
   tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
   return iwad.sprites[lname] = { mat: new THREE.SpriteMaterial({ map: tex, transparent: true }), w: pic.w, h: pic.h };
 }
+// the loaded IWAD is cached in IndexedDB so it survives page reloads
+const IDB = {
+  open() {
+    return new Promise((res, rej) => {
+      if (typeof indexedDB === 'undefined') { rej(new Error('no idb')); return; }
+      const q = indexedDB.open('doomblocks', 1);
+      q.onupgradeneeded = () => q.result.createObjectStore('files');
+      q.onsuccess = () => res(q.result);
+      q.onerror = () => rej(q.error);
+    });
+  },
+  async set(k, v) {
+    const db = await this.open();
+    return new Promise((res, rej) => {
+      const tx = db.transaction('files', 'readwrite');
+      tx.objectStore('files').put(v, k);
+      tx.oncomplete = res;
+      tx.onerror = () => rej(tx.error);
+    });
+  },
+  async get(k) {
+    const db = await this.open();
+    return new Promise((res, rej) => {
+      const rq = db.transaction('files').objectStore('files').get(k);
+      rq.onsuccess = () => res(rq.result);
+      rq.onerror = () => rej(rq.error);
+    });
+  },
+};
+function useIwad(buf, label) {
+  iwad = parseIwad(buf);
+  matCache = {};
+  $('btnIwad').textContent = 'IWAD ✓';
+  $('stMsg').textContent = label;
+  if (gl.ready) rebuild();
+}
 $('btnIwad').onclick = () => $('iwadFile').click();
 $('iwadFile').onchange = e => {
   const f = e.target.files[0]; if (!f) return;
   f.arrayBuffer().then(buf => {
     try {
-      iwad = parseIwad(buf);
-      matCache = {};
-      $('btnIwad').textContent = 'IWAD ✓';
-      $('stMsg').textContent = f.name + ' loaded — real textures & sprites on';
-      rebuild();
+      useIwad(buf, f.name + ' loaded — real textures & sprites on');
+      IDB.set('iwad', buf).catch(() => {});   // cache for next visit (best effort)
     } catch (err) { alert('Could not read that WAD: ' + err.message); }
   });
   e.target.value = '';
 };
+(async () => {   // restore a cached IWAD on startup
+  try {
+    const buf = await IDB.get('iwad');
+    if (buf) useIwad(buf, 'cached IWAD restored — real textures & sprites on');
+  } catch {}
+})();
 
 // ================= 3D view =================
 const gl = { ready:false };
@@ -1477,6 +1553,7 @@ $('tiRotate').onclick = () => {
   checkpoint();
   const c = grid[gi(selCell.x, selCell.y)];
   c.ang = ((c.ang ?? defAng(c.thing)) + 45) % 360;
+  stickyAng = c.ang;
   rebuild();
 };
 $('tiDelete').onclick = () => {
@@ -1507,7 +1584,7 @@ function bindMouse(cv) {
     if (cell && !down) {
       gl.ghost.visible = true;
       const c = grid[gi(cell.x,cell.y)];
-      const n = tool === 'terrain' ? brushN : 1;   // show the brush footprint
+      const n = (tool === 'terrain' || tool === 'ceil') ? brushN : 1;   // show the brush footprint
       const off = Math.floor((n-1)/2), x0 = cell.x - off, y0 = cell.y - off;
       gl.ghost.scale.set(n, 1, n);
       gl.ghost.position.set((x0 + n/2)*CS, colTop(c, ceilUnits()*HU)+4, -((y0 + n/2)*CS));
@@ -1687,7 +1764,8 @@ function makeSky() {
     mat = new THREE.MeshBasicMaterial({ side: THREE.BackSide,
       color: skyName === 'SKY3' ? 0x6a2a20 : skyName === 'SKY2' ? 0x4a4f5a : 0x6a5a4a });
   }
-  gl.sky = new THREE.Mesh(new THREE.CylinderGeometry(5000, 5000, 4000, 24, 1, true), mat);
+  // dome, not an open cylinder — looking straight up must still show sky
+  gl.sky = new THREE.Mesh(new THREE.SphereGeometry(5000, 24, 12, 0, Math.PI*2, 0, Math.PI*0.62), mat);
   gl.scene.add(gl.sky);
 }
 function useAction() {
