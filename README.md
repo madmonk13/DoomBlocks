@@ -102,6 +102,17 @@ page in the same browser. Use **Save Project** / **Open Project** for permanent 
 you can back up or share. **Undo** is Cmd/Ctrl+Z (per level; cleared when switching levels
 or resizing).
 
+## Walk preview
+
+The **Walk** button drops you into the map in first person, spawning at your Player 1 Start.
+WASD + mouse to move and look (Shift to run), with Doom-accurate gravity, step height (24),
+and headroom (56) — you'll get stuck exactly where the player would. Doors open with
+Space/E and close behind you, teleporters whisk you to their partner (facing the arrival
+direction you set), exit switches announce where the level would end, and the map is
+enclosed by its border walls plus your ceiling or sky. It's a preview, not gameplay — no
+monsters attack and nothing is picked up. Esc releases the mouse; Esc again returns to the
+orbit view.
+
 ## Real graphics (optional)
 
 Click **Load IWAD** and pick your own `doom2.wad` (or the free `freedoom2.wad`). The editor
@@ -111,19 +122,6 @@ walls and murals render with their actual textures, floors show their flats, and
 appear as their in-game sprites (billboarded, like the engine draws them; Spectres are even
 translucent). Anything the WAD doesn't contain falls back to the colored shapes. The WAD
 isn't stored, so reload it after reopening the page.
-
-## Development
-
-`verify-blocks.js` is a headless regression suite: it boots the editor in jsdom, builds a
-test map through the real editing functions, and byte-checks the compiled WAD (region
-merging, door orientation, wall painting, lump layout). Run it with:
-
-```
-npm install jsdom
-node verify-blocks.js
-```
-
-All checks should pass; it also writes `blocks-test.wad` you can open in GZDoom.
 
 ## Limitations
 

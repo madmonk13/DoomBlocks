@@ -51,6 +51,7 @@
   <input type="file" id="fileInput" accept=".json" class="hidden">
   <button id="btnIwad" title="Load doom2.wad or freedoom2.wad to preview real textures & sprites (never uploaded anywhere)">Load IWAD</button>
   <input type="file" id="iwadFile" accept=".wad" class="hidden">
+  <button id="btnWalk" title="Walk the map in first person — WASD + mouse, Space/E to use doors & switches">Walk</button>
   <div class="sep"></div>
   <label style="color:var(--dim)">Ceiling</label>
   <input id="ceilH" type="number" value="128" min="64" max="480" step="16" style="width:64px">
@@ -93,6 +94,8 @@
       (teleporter pair → thing → structure → pad paint → one step of terrain, in that order).<br><br>
       <b>Drag</b> to orbit · <b>wheel</b> to zoom · <b>middle-drag / shift-drag / arrows / WASD</b> to pan.
       In Select mode, drag an object to move it to another cell.<br><br>
+      <b>Walk</b> drops you into the map in first person: gravity, working doors (Space/E),
+      and live teleporters. Load an IWAD first for the full effect.<br><br>
       Cells tinted <b style="color:#ff6a5a">red</b> have under 56 units of headroom — the player
       cannot fit there and will be stuck. Raise the ceiling or lower the terrain.<br><br>
       Heights are in Doom map units: the player is 56 tall (eye level 41) and can step up 24.
@@ -434,10 +437,13 @@ const PAN_KEYS = { ArrowUp:[0,-1], w:[0,-1], ArrowDown:[0,1], s:[0,1],
                    ArrowLeft:[-1,0], a:[-1,0], ArrowRight:[1,0], d:[1,0] };
 window.addEventListener('keydown', e => {
   if ((e.metaKey||e.ctrlKey) && e.key==='z') { undo(); e.preventDefault(); return; }
-  if (e.key==='Escape') { selCell = null; refreshInfo(); return; }
+  if (e.key==='Escape') {
+    if (walk.on) { if (!document.pointerLockElement) exitWalk(); return; }
+    selCell = null; refreshInfo(); return;
+  }
   if (e.target.tagName==='INPUT' || e.target.tagName==='SELECT') return;
   const pk = PAN_KEYS[e.key];
-  if (pk && gl.ready) {           // pan the view relative to camera heading
+  if (pk && gl.ready && !walk.on) {           // pan the view relative to camera heading
     const s = gl.cam.dist * 0.06;
     const fx = Math.sin(gl.cam.theta), fz = Math.cos(gl.cam.theta);
     gl.cam.target.x += (pk[0]*fz + pk[1]*fx) * s;
@@ -1092,7 +1098,15 @@ function initGL() {
   window.addEventListener('resize', resize); resize();
   bindMouse(cv);
   rebuild();
-  (function loop(){ requestAnimationFrame(loop); placeCamera(); gl.renderer.render(gl.scene, gl.camera); })();
+  let lastT = performance.now();
+  (function loop(t){
+    requestAnimationFrame(loop);
+    const now = t || lastT;
+    const dt = Math.min(0.05, (now - lastT)/1000);
+    lastT = now;
+    if (walk.on) walkStep(dt); else placeCamera();
+    gl.renderer.render(gl.scene, gl.camera);
+  })(performance.now());
 }
 function makeScenery() { // grid lines + invisible picking plane, sized to the current map
   if (gl.gridLines) { gl.scene.remove(gl.gridLines); gl.gridLines.geometry.dispose(); }
@@ -1150,10 +1164,15 @@ function rebuild() {
     return b;
   };
   const vert = (b, x, yy, ym, u, v) => { b.pos.push(x, yy, -ym); b.uv.push(u, v); };
-  const quadY = (key, x0, ym0, x1, ym1, yy) => {      // horizontal face
+  const quadY = (key, x0, ym0, x1, ym1, yy) => {      // horizontal face (facing up)
     const b = B(key), w = b.info.w, h = b.info.h;
     vert(b, x0, yy, ym0, x0/w, ym0/h); vert(b, x1, yy, ym0, x1/w, ym0/h); vert(b, x1, yy, ym1, x1/w, ym1/h);
     vert(b, x0, yy, ym0, x0/w, ym0/h); vert(b, x1, yy, ym1, x1/w, ym1/h); vert(b, x0, yy, ym1, x0/w, ym1/h);
+  };
+  const quadYD = (key, x0, ym0, x1, ym1, yy) => {     // horizontal face (facing down: ceilings)
+    const b = B(key), w = b.info.w, h = b.info.h;
+    vert(b, x0, yy, ym0, x0/w, ym0/h); vert(b, x1, yy, ym1, x1/w, ym1/h); vert(b, x1, yy, ym0, x1/w, ym0/h);
+    vert(b, x0, yy, ym0, x0/w, ym0/h); vert(b, x0, yy, ym1, x0/w, ym1/h); vert(b, x1, yy, ym1, x1/w, ym1/h);
   };
   const quadV = (key, ax, aym, bx, bym, y0, y1) => {  // vertical face
     const b = B(key), w = b.info.w, h = b.info.h;
@@ -1167,6 +1186,10 @@ function rebuild() {
     Math.round(parseInt(hex.slice(i,i+2),16)*f).toString(16).padStart(2,'0')).join('');
   for (let y=0;y<D;y++) for (let x=0;x<W;x++) {
     const c = grid[gi(x,y)];
+    if (walk.on && c.door) {          // doors are animated meshes in walk mode
+      quadY('F|FLAT1|#6a6a70', x*CS, y*CS, (x+1)*CS, (y+1)*CS, Math.min(c.h*HU, ceil) + 0.01);
+      continue;
+    }
     const isStruct = c.wall||c.exit||c.door;
     const top = isStruct ? ceil : Math.min(c.h*HU, ceil);
     let topKey, sideKey;
@@ -1190,6 +1213,27 @@ function rebuild() {
       if (top > nTop) quadV(sideKey, ax, ay, bx, by, nTop, top);
     }
   }
+  if (walk.on) {                     // walk mode: border walls + ceilings (orbit view omits them)
+    const bwm = WALLMATS[Math.min(+$('borderSel').value||0, BASE_WALLS-1)];
+    const bKey = 'W|'+bwm[1]+'|'+bwm[2];
+    const WCS = W*CS, DCS = D*CS;
+    for (let x=0;x<W;x++) {
+      quadV(bKey, (x+1)*CS, 0, x*CS, 0, 0, ceil);          // south edge, faces into the map
+      quadV(bKey, x*CS, DCS, (x+1)*CS, DCS, 0, ceil);      // north edge
+    }
+    for (let y=0;y<D;y++) {
+      quadV(bKey, 0, y*CS, 0, (y+1)*CS, 0, ceil);          // west edge
+      quadV(bKey, WCS, (y+1)*CS, WCS, y*CS, 0, ceil);      // east edge
+    }
+    if (!$('sky').value) {
+      const cKey = 'F|CEIL3_5|#3e4148';
+      for (let y=0;y<D;y++) for (let x=0;x<W;x++) {
+        const c = grid[gi(x,y)];
+        if (c.wall || c.exit) continue;
+        quadYD(cKey, x*CS, y*CS, (x+1)*CS, (y+1)*CS, ceil);
+      }
+    }
+  }
   gl.world = new THREE.Group();
   for (const b of buckets.values()) {
     if (!b.pos.length) continue;
@@ -1200,6 +1244,25 @@ function rebuild() {
     gl.world.add(new THREE.Mesh(g, b.info.mat));
   }
   gl.scene.add(gl.world);
+  // dynamic door slabs (walk mode only)
+  if (gl.doorGroup) {
+    gl.scene.remove(gl.doorGroup);
+    gl.doorGroup.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+    gl.doorGroup = null;
+  }
+  if (walk.on) {
+    gl.doorGroup = new THREE.Group();
+    const dmat = matInfo('W|BIGDOOR2|#c9a13b').mat;
+    for (let y=0;y<D;y++) for (let x=0;x<W;x++) {
+      if (!grid[gi(x,y)].door) continue;
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(CS, ceil, CS), dmat);
+      mesh.position.set(x*CS+CS/2, ceil/2, -(y*CS+CS/2));
+      mesh.userData.doorKey = x+','+y;
+      walk.doors[x+','+y] = walk.doors[x+','+y] || { frac:0, state:'closed', hold:0 };
+      gl.doorGroup.add(mesh);
+    }
+    gl.scene.add(gl.doorGroup);
+  }
   // headroom warning: tint cells red where the player (56 tall) can't fit
   if (gl.warn) { gl.scene.remove(gl.warn); gl.warn.geometry.dispose(); }
   const wpos = [];
@@ -1216,6 +1279,8 @@ function rebuild() {
   gl.warn = new THREE.Mesh(wg, new THREE.MeshBasicMaterial({
     color:0xff4040, transparent:true, opacity:0.35, depthWrite:false, side:THREE.DoubleSide }));
   gl.scene.add(gl.warn);
+  gl.warn.visible = !walk.on;
+  if (gl.gridLines) gl.gridLines.visible = !walk.on;
   // things
   gl.thingGroup = new THREE.Group();
   for (let y=0;y<D;y++) for (let x=0;x<W;x++) {
@@ -1428,6 +1493,7 @@ function bindMouse(cv) {
   let down = null;
   cv.addEventListener('contextmenu', e => e.preventDefault());
   cv.addEventListener('mousedown', e => {
+    if (walk.on) return;
     down = { x:e.clientX, y:e.clientY, btn:e.button, shift:e.shiftKey, moved:false,
       theta:gl.cam.theta, phi:gl.cam.phi, target:gl.cam.target.clone() };
     if (e.button === 0 && tool === 'select') {
@@ -1436,6 +1502,7 @@ function bindMouse(cv) {
     }
   });
   window.addEventListener('mousemove', e => {
+    if (walk.on) return;
     const cell = pick(e, cv);
     if (cell && !down) {
       gl.ghost.visible = true;
@@ -1508,6 +1575,7 @@ function bindMouse(cv) {
   });
   cv.addEventListener('wheel', e => {
     e.preventDefault();
+    if (walk.on) return;
     gl.cam.dist *= Math.exp(e.deltaY*0.0012);
   }, { passive:false });
 }
@@ -1536,6 +1604,187 @@ function pick(e, cv) {
   const cx = Math.floor(p.x/CS), cy = Math.floor(-p.z/CS);
   return inb(cx,cy) ? {x:cx, y:cy} : null;
 }
+
+// ================= walk mode: first-person preview =================
+const walk = { on:false, x:0, z:0, feet:0, vy:0, yaw:0, pitch:0, keys:{}, doors:{}, tpGuard:false, savedCam:null };
+$('btnWalk').onclick = () => walk.on ? exitWalk() : enterWalk();
+function wCeil() { return ceilUnits()*HU; }
+function cellAt(px, pz) {
+  const cx = Math.floor(px/CS), cy = Math.floor(-pz/CS);
+  return inb(cx, cy) ? { cx, cy, key: cx+','+cy, c: grid[gi(cx, cy)] } : null;
+}
+function wTop(c) { return Math.min(c.h*HU, wCeil()); }
+function passable(px, pz) {
+  const cell = cellAt(px, pz);
+  if (!cell) return false;
+  const c = cell.c;
+  if (c.wall || c.exit) return false;
+  if (c.door) {
+    const d = walk.doors[cell.key];
+    return !!d && d.frac > 0.85 && wTop(c) - walk.feet <= 24;
+  }
+  const top = wTop(c);
+  return (top - walk.feet <= 24) && (wCeil() - top >= 56);
+}
+function groundAt(px, pz) {
+  let g = 0;
+  for (const [ox, oz] of [[-15,-15],[15,-15],[-15,15],[15,15]]) {
+    const cell = cellAt(px+ox, pz+oz);
+    if (cell && !cell.c.wall && !cell.c.exit) g = Math.max(g, wTop(cell.c));
+  }
+  return g;
+}
+function enterWalk() {
+  if (!gl.ready) return;
+  let sx = W*CS/2, sz = -D*CS/2, sa = 90, found = false;
+  for (const t of [1,2,3,4,11]) {
+    if (found) break;
+    for (let y=0;y<D && !found;y++) for (let x=0;x<W;x++) {
+      const c = grid[gi(x,y)];
+      if (c.thing === t) { sx = x*CS+CS/2; sz = -(y*CS+CS/2); sa = c.ang ?? 90; found = true; break; }
+    }
+  }
+  walk.on = true;
+  walk.x = sx; walk.z = sz;
+  const sc = cellAt(sx, sz);
+  walk.feet = (sc && !sc.c.wall && !sc.c.exit) ? wTop(sc.c) : 0;
+  walk.vy = 0; walk.yaw = (sa - 90) * Math.PI/180; walk.pitch = 0;
+  walk.keys = {}; walk.doors = {}; walk.tpGuard = true;
+  walk.savedCam = { theta: gl.cam.theta, phi: gl.cam.phi, dist: gl.cam.dist, target: gl.cam.target.clone() };
+  gl.camera.rotation.set(0, 0, 0, 'YXZ');
+  rebuild();
+  if (gl.ghost) gl.ghost.visible = false;
+  if (gl.selRing) gl.selRing.visible = false;
+  makeSky();
+  $('btnWalk').textContent = 'Exit Walk';
+  $('btnWalk').classList.add('active');
+  $('stTool').textContent = 'walk: click to capture mouse · WASD move · Shift run · Space/E use · Esc exit';
+}
+function exitWalk() {
+  walk.on = false;
+  if (document.pointerLockElement) document.exitPointerLock();
+  if (gl.sky) { gl.scene.remove(gl.sky); gl.sky.geometry.dispose(); gl.sky = null; }
+  if (walk.savedCam) {
+    gl.cam.theta = walk.savedCam.theta; gl.cam.phi = walk.savedCam.phi;
+    gl.cam.dist = walk.savedCam.dist; gl.cam.target.copy(walk.savedCam.target);
+  }
+  rebuild();
+  $('btnWalk').textContent = 'Walk';
+  $('btnWalk').classList.remove('active');
+  syncTools();
+}
+function makeSky() {
+  const skyName = $('sky').value;
+  if (!skyName) return;
+  const t = iwad ? getWall(skyName) : null;
+  let mat;
+  if (t) {
+    const tex = t.tex.clone();
+    tex.needsUpdate = true;
+    tex.repeat.set(4, 1);
+    mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide });
+  } else {
+    mat = new THREE.MeshBasicMaterial({ side: THREE.BackSide,
+      color: skyName === 'SKY3' ? 0x6a2a20 : skyName === 'SKY2' ? 0x4a4f5a : 0x6a5a4a });
+  }
+  gl.sky = new THREE.Mesh(new THREE.CylinderGeometry(5000, 5000, 4000, 24, 1, true), mat);
+  gl.scene.add(gl.sky);
+}
+function useAction() {
+  const fx = -Math.sin(walk.yaw), fz = -Math.cos(walk.yaw);
+  const cell = cellAt(walk.x + fx*52, walk.z + fz*52);
+  if (!cell) return;
+  if (cell.c.door) {
+    const d = walk.doors[cell.key] = walk.doors[cell.key] || { frac:0, state:'closed', hold:0 };
+    if (d.state === 'closed' || d.state === 'closing') d.state = 'opening';
+  } else if (cell.c.exit) {
+    $('stMsg').textContent = '► EXIT! The level would end here (and lead to the next one).';
+  }
+}
+function walkStep(dt) {
+  const CU = wCeil();
+  // animate doors
+  if (gl.doorGroup) {
+    const pc0 = cellAt(walk.x, walk.z);
+    for (const mesh of gl.doorGroup.children) {
+      const d = walk.doors[mesh.userData.doorKey];
+      if (!d) continue;
+      const occupied = pc0 && pc0.key === mesh.userData.doorKey;
+      if (d.state === 'opening') {
+        d.frac = Math.min(1, d.frac + dt*1.8);
+        if (d.frac === 1) { d.state = 'open'; d.hold = 4; }
+      } else if (d.state === 'open') {
+        if (occupied) d.hold = 4;
+        else { d.hold -= dt; if (d.hold <= 0) d.state = 'closing'; }
+      } else if (d.state === 'closing') {
+        if (occupied) d.state = 'opening';
+        else { d.frac = Math.max(0, d.frac - dt*1.8); if (d.frac === 0) d.state = 'closed'; }
+      }
+      const hgt = Math.max(0.02, 1 - d.frac);
+      mesh.scale.y = hgt;
+      mesh.position.y = d.frac*CU + hgt*CU/2;
+    }
+  }
+  // movement (axis-separated collision, radius 15, step-up 24)
+  const sp = ((walk.keys.ShiftLeft || walk.keys.ShiftRight) ? 420 : 260) * dt;
+  const fx = -Math.sin(walk.yaw), fz = -Math.cos(walk.yaw);
+  const rx = -fz, rz = fx;
+  let dx = 0, dz = 0;
+  if (walk.keys.KeyW || walk.keys.ArrowUp)    { dx += fx*sp; dz += fz*sp; }
+  if (walk.keys.KeyS || walk.keys.ArrowDown)  { dx -= fx*sp; dz -= fz*sp; }
+  if (walk.keys.KeyA || walk.keys.ArrowLeft)  { dx -= rx*sp; dz -= rz*sp; }
+  if (walk.keys.KeyD || walk.keys.ArrowRight) { dx += rx*sp; dz += rz*sp; }
+  const R = 15;
+  const fits = (px, pz) => passable(px-R, pz-R) && passable(px+R, pz-R) && passable(px-R, pz+R) && passable(px+R, pz+R);
+  if (dx && fits(walk.x + dx, walk.z)) walk.x += dx;
+  if (dz && fits(walk.x, walk.z + dz)) walk.z += dz;
+  // gravity & step-up
+  const g = groundAt(walk.x, walk.z);
+  if (walk.feet < g) { walk.feet = g; walk.vy = 0; }
+  else if (walk.feet > g) {
+    walk.vy -= 2400*dt;
+    walk.feet = Math.max(g, walk.feet + walk.vy*dt);
+    if (walk.feet === g) walk.vy = 0;
+  }
+  // teleporters fire when you step on the pad (not on arrival)
+  const pc = cellAt(walk.x, walk.z);
+  if (pc && isTp(pc.c.thing)) {
+    if (!walk.tpGuard) {
+      let best = null, bd = Infinity;
+      for (let y=0;y<D;y++) for (let x=0;x<W;x++) {
+        const o = grid[gi(x,y)];
+        if (o.thing !== pc.c.thing || (x === pc.cx && y === pc.cy)) continue;
+        const d2 = (x - pc.cx)**2 + (y - pc.cy)**2;
+        if (d2 < bd) { bd = d2; best = { x, y, o }; }
+      }
+      if (best) {
+        walk.x = best.x*CS + CS/2; walk.z = -(best.y*CS + CS/2);
+        walk.feet = wTop(best.o); walk.vy = 0;
+        walk.yaw = ((best.o.ang ?? 90) - 90) * Math.PI/180;
+        walk.tpGuard = true;
+      }
+    }
+  } else walk.tpGuard = false;
+  // camera
+  if (gl.camera) {
+    gl.camera.position.set(walk.x, walk.feet + 41, walk.z);
+    gl.camera.rotation.set(walk.pitch, walk.yaw, 0, 'YXZ');   // no roll — level horizon
+  }
+  if (gl.sky) gl.sky.position.set(walk.x, walk.feet + 41, walk.z);
+}
+window.addEventListener('keydown', e => {
+  if (!walk.on || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  walk.keys[e.code] = true;
+  if (e.code === 'Space' || e.code === 'KeyE') { useAction(); e.preventDefault(); }
+  if (e.code.startsWith('Arrow')) e.preventDefault();
+});
+window.addEventListener('keyup', e => { walk.keys[e.code] = false; });
+document.addEventListener('mousemove', e => {
+  if (!walk.on || document.pointerLockElement !== $('cv')) return;
+  walk.yaw -= e.movementX * 0.0022;
+  walk.pitch = Math.max(-1.5, Math.min(1.5, walk.pitch - e.movementY * 0.0022));
+});
+$('cv').addEventListener('click', () => { if (walk.on) $('cv').requestPointerLock(); });
 
 // ================= init =================
 syncTools();
