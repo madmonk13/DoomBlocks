@@ -131,7 +131,7 @@
     </div>
     <h3>Ceiling</h3>
     <div style="display:flex;gap:4px">
-      <button class="tool" data-tool="ceil" data-dir="lower" style="flex:1" title="Lower the ceiling — put a 128 ceiling next to a door for a wall above it"><span class="chip" style="background:#565b68"></span>Lower</button>
+      <button class="tool" data-tool="ceil" data-dir="lower" style="flex:1" title="Lower the ceiling. Used on a door, this caps how high the door opens and leaves normal wall above it instead"><span class="chip" style="background:#565b68"></span>Lower</button>
       <button class="tool" data-tool="ceil" data-dir="raise" style="flex:1" title="Raise a lowered ceiling back toward the level ceiling"><span class="chip" style="background:#7d838f"></span>Raise</button>
     </div>
     <div id="optTerrain" class="opts hidden">
@@ -500,11 +500,28 @@ function applyTool(x, y) {
   }
   else if (tool==='ceil') {
     const delta = (terraDir==='lower' ? 1 : -1) * (terraStep/HU);
+    // Doors have no ceiling of their own — a door's open height always follows
+    // whatever its neighbors are. So lowering the ceiling ON a door instead lowers
+    // the door's open (non-wall) neighbor cells: that caps how high it opens and
+    // leaves ordinary wall above it, without the user needing to find/paint the
+    // corridor cell beside the door themselves.
+    const targets = new Set();
     for (const [bx,by] of brushCells(x,y)) {
       const cc = grid[gi(bx,by)];
-      if (cc.wall || cc.door || cc.exit) continue;
-      const maxDrop = Math.max(0, ceilUnits() - cc.h);   // ceiling can descend to the floor
-      cc.ch = Math.max(0, Math.min(maxDrop, (cc.ch||0) + delta));
+      if (cc.wall || cc.exit) continue;
+      if (cc.door) {
+        for (const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+          const nx = bx+dx, ny = by+dy;
+          if (!inb(nx,ny)) continue;
+          const n = grid[gi(nx,ny)];
+          if (!n.wall && !n.exit && !n.door) targets.add(gi(nx,ny));
+        }
+      } else targets.add(gi(bx,by));
+    }
+    for (const idx of targets) {
+      const t = grid[idx];
+      const maxDrop = Math.max(0, ceilUnits() - t.h);   // ceiling can descend to the floor
+      t.ch = Math.max(0, Math.min(maxDrop, (t.ch||0) + delta));
     }
   }
   else if (tool==='erase') { Object.assign(c, newCol()); }
@@ -1753,19 +1770,36 @@ function exitWalk() {
 function makeSky() {
   const skyName = $('sky').value;
   if (!skyName) return;
-  const t = iwad ? getWall(skyName) : null;
-  let mat;
-  if (t) {
-    const tex = t.tex.clone();
-    tex.needsUpdate = true;
-    tex.repeat.set(4, 1);
-    mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide });
-  } else {
-    mat = new THREE.MeshBasicMaterial({ side: THREE.BackSide,
-      color: skyName === 'SKY3' ? 0x6a2a20 : skyName === 'SKY2' ? 0x4a4f5a : 0x6a5a4a });
-  }
+  const horizon = skyName === 'SKY3' ? 0x6a2a20 : skyName === 'SKY2' ? 0x4a4f5a : 0x6a5a4a;
+  let mat = null;
+  try {
+    const t = iwad ? getWall(skyName) : null;
+    if (t) {
+      const tex = t.tex.clone();
+      tex.needsUpdate = true;
+      tex.repeat.set(4, 1);
+      mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide });
+    }
+  } catch (e) { console.warn('sky texture failed to decode, using a flat color instead', e); }
   // dome, not an open cylinder — looking straight up must still show sky
-  gl.sky = new THREE.Mesh(new THREE.SphereGeometry(5000, 24, 12, 0, Math.PI*2, 0, Math.PI*0.62), mat);
+  const geo = new THREE.SphereGeometry(5000, 24, 12, 0, Math.PI*2, 0, Math.PI*0.62);
+  if (!mat) {
+    // No IWAD (or the texture failed to load): a single flat color across the whole dome
+    // reads as an empty void once it blends into the dark scene background, especially
+    // straight overhead. Shade it — lighter at the horizon, darker toward the zenith —
+    // so it still reads as open sky rather than nothing.
+    const zenith = skyName === 'SKY3' ? 0x150806 : skyName === 'SKY2' ? 0x14161b : 0x14110d;
+    const hc = new THREE.Color(horizon), zc = new THREE.Color(zenith);
+    const pos = geo.attributes.position, colors = [];
+    for (let i=0;i<pos.count;i++) {
+      const f = Math.max(0, Math.min(1, pos.getY(i) / 5000));   // 0 at rim, 1 at zenith
+      const c = hc.clone().lerp(zc, f);
+      colors.push(c.r, c.g, c.b);
+    }
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    mat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide });
+  }
+  gl.sky = new THREE.Mesh(geo, mat);
   gl.scene.add(gl.sky);
 }
 function useAction() {

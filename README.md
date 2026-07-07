@@ -38,6 +38,11 @@ and can automatically step up **24**. Each grid cell is **64×64** — roughly a
 - **Terrain** — Raise/Lower toggle, a step size adjustable from 16 to 128 in 16-unit increments,
   and a square brush (1×1 up to 6×6). The hover highlight shows the brush footprint.
   Terrain never bulldozes walls/doors/exits; erase those first.
+- **Ceiling** — Raise/Lower a cell's ceiling independently of the level's global ceiling height,
+  using the same step and brush as Terrain. Used on a door, it lowers the door's open
+  neighbor cells instead of the door itself (a door has no ceiling of its own — it always opens
+  to match its neighbors), capping how high the door opens and leaving ordinary wall above it,
+  just like doors in the original games.
 - **Erase column** — resets a cell completely.
 - **Wall** — solid block reaching the ceiling. **Door** — place in a gap between walls; it becomes
   a working door, usable from both sides. **Exit switch** — a wall the player "uses" to finish the

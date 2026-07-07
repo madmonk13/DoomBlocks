@@ -128,6 +128,37 @@ ok(wood.length === 4 && wood.every(l => m2.sidedefs[l.front].upper === 'WOOD5'),
 ok(m2.linedefs.filter(l => l.special === 1)
      .every(l => m2.sidedefs[l.front].upper === 'BIGDOOR2'), 'door faces still BIGDOOR2');
 
+// ---- door with a wall above it (Ceiling tool applied directly to the door) ----
+w.eval(`
+  tool = 'ceil'; terraDir = 'lower'; terraStep = 32; brushN = 1;
+  applyTool(15, 10);   // the door cell itself, not a neighbor
+  window.__m3 = compile();
+`);
+ok((w.eval('grid[gi(15,10)].ch') || 0) === 0, 'ceiling tool leaves the door cell\'s own ch at 0');
+ok(w.eval('grid[gi(15,11)].ch') === 2, 'ceiling tool instead lowers the open neighbor south of the door (32/16 units)');
+ok(w.eval('grid[gi(15,9)].ch') === 2, 'ceiling tool also lowers the open neighbor north of the door');
+const m3 = w.__m3;
+const isClosedDoorSector = s => s.floorh === s.ceilh;
+const vestibules = m3.sectors.filter(s => s.ceilh === 96 && s.floorh === 0);
+ok(vestibules.length === 2, 'both capped cells beside the door form their own low-ceiling sectors: ' +
+   m3.sectors.map(s => s.ceilh).join(','));
+// the border between a capped vestibule and the rest of the (taller) room/outdoors —
+// NOT the door's own frame line — must show the ordinary wall texture
+const aboveDoor = m3.linedefs.filter(l => {
+  if (l.back < 0) return false;
+  const sa = m3.sectors[m3.sidedefs[l.front].sector], sb = m3.sectors[m3.sidedefs[l.back].sector];
+  if (isClosedDoorSector(sa) || isClosedDoorSector(sb)) return false;
+  return (sa.ceilh === 96) !== (sb.ceilh === 96);
+});
+// each 1-cell vestibule is boxed in by the room/outdoors on 3 sides (its 4th neighbor
+// is the door itself), so this is 3 boundary segments per vestibule, 6 in total
+ok(aboveDoor.length === 6 && aboveDoor.every(l =>
+   m3.sidedefs[l.front].upper === 'STARTAN2' && m3.sidedefs[l.back].upper === 'STARTAN2'),
+   'wall above the door uses the normal wall texture, not the door texture: ' + aboveDoor.length);
+// the door's own frame line is untouched — still BIGDOOR2
+ok(m3.linedefs.filter(l => l.special === 1).every(l => m3.sidedefs[l.front].upper === 'BIGDOOR2'),
+   'door face itself is still BIGDOOR2 — only the corridor ceiling beside it steps down');
+
 // WAD bytes
 const buf = w.eval('wadBytes(window.__m, "MAP01")');
 const dv = new w.DataView(buf), u8 = new w.Uint8Array(buf);
