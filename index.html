@@ -374,14 +374,9 @@ function syncLevelSel() {
   s.value = cur;
   $('mapName').disabled = levels.length > 1;   // multi-level always exports MAP01..MAPnn
 }
-function freshLevel() {   // starter room so every level exports playable
-  const g = Array.from({length:32*32}, newCol);
-  const wall = (x,y) => { g[y*32+x].wall = true; };
-  for (let x=10;x<=20;x++){ wall(x,10); wall(x,20); }
-  for (let y=10;y<=20;y++){ wall(10,y); wall(20,y); }
-  g[10*32+15].wall = false; g[10*32+15].door = true;
-  g[15*32+15].thing = 1;
-  return { W:32, D:32, ceil:128, sky:'', name:'', border:0, grid:g };
+function freshLevel() {   // a completely empty board
+  return { W:32, D:32, ceil:128, sky:'', name:'', border:0,
+    grid: Array.from({length:32*32}, newCol) };
 }
 function adoptProject(j) {
   const norm = L => ({ W:clampDim(L.W), D:clampDim(L.D), ceil:L.ceil||128,
@@ -779,13 +774,13 @@ function download(blob, name) {
 $('btnExport').onclick = () => {
   storeCur();
   const multi = levels.length > 1;
-  const maps = [], problems = [];
+  const maps = [], problems = [], noStart = [];
   levels.forEach((L, i) => {
     applyLevelState(L);                        // compile() reads globals + inputs
     const m = compile();
     const slot = multi ? 'MAP' + String(i+1).padStart(2,'0') : $('mapName').value;
     if (!m.sectors.length) problems.push(slot + ': no open space');
-    if (!m.things.some(t => t.type === 1)) problems.push(slot + ': no Player 1 Start');
+    if (!m.things.some(t => t.type === 1)) noStart.push(slot);
     // headroom check: the player is 56 tall — anything on a cramped cell is stuck
     const cu = ceilUnits()*HU;
     let cramped = 0, crampedStart = false;
@@ -799,6 +794,11 @@ $('btnExport').onclick = () => {
     maps.push({ m, slot, sky: $('sky').value, name: L.name || '' });
   });
   applyLevelState(levels[cur]);                // restore the level being edited
+  if (noStart.length) {                        // hard requirement: the map can't launch without it
+    alert('Export aborted — no Player 1 Start on: ' + noStart.join(', ') +
+      '.\n\nPlace one via Things → Starts → Player 1 Start.');
+    return;
+  }
   if (problems.length && !confirm(problems.join('\n')+'\n\nExport anyway?')) return;
   const lumps = maps.flatMap(x => mapLumps(x.m, x.slot));
   lumps.push(mapinfoLump(maps.map((x, i) => ({

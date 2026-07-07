@@ -23,9 +23,14 @@ const w = dom.window;
 let fail = 0;
 const ok = (c, m) => { console.log((c ? 'PASS' : 'FAIL') + '  ' + m); if (!c) fail++; };
 
-// Starter map = 11x11 walled room, door at (15,10), player at (15,15).
-// Add: 2-cell raised platform, 1 water cell, exit switch in east wall.
+// New projects start empty — build the test map: an 11x11 walled room with a door
+// at (15,10) and a player start at (15,15), plus a platform, water, and an exit switch.
 w.eval(`
+  const wall = (x,y) => { grid[gi(x,y)].wall = true; };
+  for (let x=10;x<=20;x++){ wall(x,10); wall(x,20); }
+  for (let y=10;y<=20;y++){ wall(10,y); wall(20,y); }
+  grid[gi(15,10)].wall = false; grid[gi(15,10)].door = true;
+  grid[gi(15,15)].thing = 1;
   grid[gi(12,12)].h = 2; grid[gi(12,13)].h = 2;   // platform, +32
   grid[gi(17,17)].surf = 5;                        // water
   grid[gi(20,15)].wall = false; grid[gi(20,15)].exit = true;

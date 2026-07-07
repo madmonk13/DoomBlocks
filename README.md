@@ -10,11 +10,13 @@ vertex/linedef editing with a first-person preview; this README focuses on DoomB
 
 ## Quick start
 
-1. Open `doom-blocks.html`. You get a starter room with a door and a player start.
+1. Open the editor. You start with an empty board — wall off a room, or just build in the open
+   (the map boundary is itself a solid wall).
 2. Pick tools from the right sidebar, click cells to build. Right-click removes
    (thing → structure → one step of terrain, in that order).
-3. Navigation: drag to orbit, wheel to zoom, middle-drag / shift-drag / arrow keys / WASD to pan.
-4. Export WAD, then play it: `gzdoom -file episode.wad`
+3. Place a **Player 1 Start** (Things → Starts) — export requires one and will abort without it.
+4. Navigation: drag to orbit, wheel to zoom, middle-drag / shift-drag / arrow keys / WASD to pan.
+5. Export WAD, then play it: `gzdoom -file episode.wad`
 
 The exported WAD has empty node lumps, so use a ZDoom-family port (GZDoom, Zandronum) which
 builds nodes automatically. For vanilla ports, run the WAD through a node builder like zdbsp first.
