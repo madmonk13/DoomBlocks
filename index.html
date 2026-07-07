@@ -49,6 +49,8 @@
   <button id="btnSave">Save Project</button>
   <button id="btnLoad">Open Project</button>
   <input type="file" id="fileInput" accept=".json" class="hidden">
+  <button id="btnIwad" title="Load doom2.wad or freedoom2.wad to preview real textures & sprites (never uploaded anywhere)">Load IWAD</button>
+  <input type="file" id="iwadFile" accept=".wad" class="hidden">
   <div class="sep"></div>
   <label style="color:var(--dim)">Ceiling</label>
   <input id="ceilH" type="number" value="128" min="64" max="480" step="16" style="width:64px">
@@ -893,6 +895,174 @@ $('btnNew').onclick = () => {
 $('ceilH').onchange = rebuild;
 $('sky').onchange = autosave;
 
+// ================= IWAD graphics (optional) =================
+// Loading the user's own doom2.wad enables real textures on blocks and real
+// sprites for things. Everything falls back to colored shapes without it.
+let iwad = null;    // { dv, u8, lumps, pal, texDefs, pnames, flats:{}, walls:{}, sprites:{} }
+let matCache = {};
+const SPRITES = {   // thing type -> sprite lump (missing lumps just fall back)
+  1:'PLAYA1',2:'PLAYA1',3:'PLAYA1',4:'PLAYA1',11:'PLAYA1',
+  3004:'POSSA1',9:'SPOSA1',65:'CPOSA1',84:'SSWVA1',3001:'TROOA1',3002:'SARGA1',58:'SARGA1',
+  3006:'SKULA1',3005:'HEADA1',69:'BOS2A1',3003:'BOSSA1',66:'SKELA1',67:'FATTA1',68:'BSPIA1',
+  71:'PAINA1',64:'VILEA1',7:'SPIDA1D1',16:'CYBRA1',
+  2001:'SHOTA0',82:'SGN2A0',2002:'MGUNA0',2003:'LAUNA0',2004:'PLASA0',2005:'CSAWA0',2006:'BFUGA0',
+  2007:'CLIPA0',2048:'AMMOA0',2008:'SHELA0',2049:'SBOXA0',2010:'ROCKA0',2046:'BROKA0',2047:'CELLA0',17:'CELPA0',8:'BPAKA0',
+  2011:'STIMA0',2012:'MEDIA0',2014:'BON1A0',2015:'BON2A0',2018:'ARM1A0',2019:'ARM2A0',
+  2013:'SOULA0',83:'MEGAA0',2022:'PINVA0',2023:'PSTRA0',2024:'PINSA0',2025:'SUITA0',2026:'PMAPA0',2045:'PVISA0',
+  5:'BKEYA0',40:'BSKUA0',6:'YKEYA0',39:'YSKUA0',13:'RKEYA0',38:'RSKUA0',
+  2035:'BAR1A0',2028:'COLUA0',34:'CANDA0',35:'CBRAA0',44:'TBLUA0',45:'TGRNA0',46:'TREDA0',
+  48:'ELECA0',30:'COL1A0',32:'COL3A0',41:'CEYEA0',43:'TRE1A0',54:'TRE2A0',15:'PLAYN0',10:'PLAYW0',
+  25:'POL1A0',26:'POL6A0',27:'POL4A0',28:'POL2A0',29:'POL3A0',
+  63:'GOR1A0',59:'GOR2A0',61:'GOR3A0',60:'GOR4A0',62:'GOR5A0',
+  88:'BBRNA0',72:'KEENA0',
+};
+const HANGING = new Set([63,59,61,60,62,72]);
+function parseIwad(buf) {
+  const dv = new DataView(buf), u8 = new Uint8Array(buf);
+  const magic = String.fromCharCode(u8[0],u8[1],u8[2],u8[3]);
+  if (magic !== 'IWAD' && magic !== 'PWAD') throw new Error('not a WAD');
+  const n = dv.getInt32(4, true), dirOfs = dv.getInt32(8, true);
+  const lumps = {};
+  const nameAt = o => {
+    let s = '';
+    for (let i=0;i<8;i++) { const b = u8[o+i]; if (!b) break; s += String.fromCharCode(b); }
+    return s.toUpperCase();
+  };
+  for (let i=0;i<n;i++) {
+    const o = dirOfs + i*16;
+    lumps[nameAt(o+8)] = [dv.getInt32(o, true), dv.getInt32(o+4, true)];
+  }
+  if (!lumps.PLAYPAL) throw new Error('no PLAYPAL — not a Doom IWAD');
+  const pal = u8.slice(lumps.PLAYPAL[0], lumps.PLAYPAL[0] + 768);
+  return { dv, u8, lumps, pal, texDefs: null, pnames: null, flats:{}, walls:{}, sprites:{} };
+}
+function mkTex(canvas) {
+  const t = new THREE.CanvasTexture(canvas);
+  t.magFilter = THREE.NearestFilter;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+function decodePic(ofs) {  // Doom picture format -> canvas (transparent bg)
+  const dv = iwad.dv, u8 = iwad.u8, pal = iwad.pal;
+  const w = dv.getUint16(ofs, true), h = dv.getUint16(ofs+2, true);
+  if (!w || !h || w > 2048 || h > 2048) return null;
+  const cv = document.createElement('canvas');
+  cv.width = w; cv.height = h;
+  const ctx = cv.getContext('2d');
+  const img = ctx.createImageData(w, h);
+  for (let x=0;x<w;x++) {
+    let p = ofs + dv.getUint32(ofs + 8 + x*4, true);
+    for (;;) {
+      const top = u8[p];
+      if (top === 255) break;
+      const len = u8[p+1];
+      p += 3;
+      for (let j=0;j<len;j++) {
+        const y = top + j;
+        if (y < h) {
+          const pi = u8[p]*3, di = (y*w + x)*4;
+          img.data[di] = pal[pi]; img.data[di+1] = pal[pi+1]; img.data[di+2] = pal[pi+2]; img.data[di+3] = 255;
+        }
+        p++;
+      }
+      p++;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  return { canvas: cv, w, h };
+}
+function getFlat(name) {
+  if (!iwad) return null;
+  if (name in iwad.flats) return iwad.flats[name];
+  const l = iwad.lumps[name];
+  if (!l || l[1] < 4096) return iwad.flats[name] = null;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 64;
+  const ctx = cv.getContext('2d');
+  const img = ctx.createImageData(64, 64);
+  for (let i=0;i<4096;i++) {
+    const pi = iwad.u8[l[0]+i]*3;
+    img.data[i*4] = iwad.pal[pi]; img.data[i*4+1] = iwad.pal[pi+1];
+    img.data[i*4+2] = iwad.pal[pi+2]; img.data[i*4+3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  return iwad.flats[name] = { tex: mkTex(cv), w: 64, h: 64 };
+}
+function parseTexDefs() {
+  const dv = iwad.dv;
+  iwad.pnames = [];
+  const pn = iwad.lumps.PNAMES;
+  if (pn) {
+    const cnt = dv.getInt32(pn[0], true);
+    for (let i=0;i<cnt;i++) {
+      let s = '';
+      for (let j=0;j<8;j++) { const b = iwad.u8[pn[0]+4+i*8+j]; if (!b) break; s += String.fromCharCode(b); }
+      iwad.pnames.push(s.toUpperCase());
+    }
+  }
+  iwad.texDefs = {};
+  for (const lname of ['TEXTURE1','TEXTURE2']) {
+    const l = iwad.lumps[lname];
+    if (!l) continue;
+    const base = l[0], cnt = dv.getInt32(base, true);
+    for (let i=0;i<cnt;i++) {
+      const o = base + dv.getInt32(base + 4 + i*4, true);
+      let s = '';
+      for (let j=0;j<8;j++) { const b = iwad.u8[o+j]; if (!b) break; s += String.fromCharCode(b); }
+      const np = dv.getUint16(o+20, true);
+      const patches = [];
+      for (let p=0;p<np;p++) {
+        const po = o + 22 + p*10;
+        patches.push({ x: dv.getInt16(po, true), y: dv.getInt16(po+2, true), p: dv.getUint16(po+4, true) });
+      }
+      iwad.texDefs[s.toUpperCase()] = { w: dv.getUint16(o+12, true), h: dv.getUint16(o+14, true), patches };
+    }
+  }
+}
+function getWall(name) {
+  if (!iwad) return null;
+  if (name in iwad.walls) return iwad.walls[name];
+  if (!iwad.texDefs) parseTexDefs();
+  const def = iwad.texDefs[name];
+  if (!def) return iwad.walls[name] = null;
+  const cv = document.createElement('canvas');
+  cv.width = def.w; cv.height = def.h;
+  const ctx = cv.getContext('2d');
+  for (const pt of def.patches) {
+    const pname = iwad.pnames[pt.p];
+    const l = pname && iwad.lumps[pname];
+    if (!l) continue;
+    const pic = decodePic(l[0]);
+    if (pic) ctx.drawImage(pic.canvas, pt.x, pt.y);
+  }
+  return iwad.walls[name] = { tex: mkTex(cv), w: def.w, h: def.h };
+}
+function getSprite(lname) {
+  if (!iwad) return null;
+  if (lname in iwad.sprites) return iwad.sprites[lname];
+  const l = iwad.lumps[lname];
+  if (!l) return iwad.sprites[lname] = null;
+  const pic = decodePic(l[0]);
+  if (!pic) return iwad.sprites[lname] = null;
+  const tex = mkTex(pic.canvas);
+  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+  return iwad.sprites[lname] = { mat: new THREE.SpriteMaterial({ map: tex, transparent: true }), w: pic.w, h: pic.h };
+}
+$('btnIwad').onclick = () => $('iwadFile').click();
+$('iwadFile').onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  f.arrayBuffer().then(buf => {
+    try {
+      iwad = parseIwad(buf);
+      matCache = {};
+      $('btnIwad').textContent = 'IWAD ✓';
+      $('stMsg').textContent = f.name + ' loaded — real textures & sprites on';
+      rebuild();
+    } catch (err) { alert('Could not read that WAD: ' + err.message); }
+  });
+  e.target.value = '';
+};
+
 // ================= 3D view =================
 const gl = { ready:false };
 function initGL() {
@@ -956,40 +1126,79 @@ function rebuild() {
   autosave();
   refreshInfo();
   if (!gl.ready) return;
-  if (gl.world) { gl.scene.remove(gl.world); gl.world.geometry.dispose(); }
+  if (gl.world) {
+    gl.scene.remove(gl.world);
+    gl.world.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+  }
   if (gl.thingGroup) { gl.scene.remove(gl.thingGroup); }
   const ceil = ceilUnits()*HU;
-  const pos = [], col = [];
-  const C = new THREE.Color();
-  const push = (c, ...pts) => { for (let i=0;i<pts.length;i+=3) { pos.push(pts[i],pts[i+1],pts[i+2]); col.push(c.r,c.g,c.b); } };
-  const quadY = (x0,z0,x1,z1,y,c) => { // horizontal quad (top face), map->three z = -mapY
-    push(c, x0,y,-z0, x1,y,-z0, x1,y,-z1,  x0,y,-z0, x1,y,-z1, x0,y,-z1);
+  // faces are bucketed by material: real texture when an IWAD is loaded, flat color otherwise
+  const buckets = new Map();
+  function matInfo(key) {
+    if (matCache[key]) return matCache[key];
+    const [kind, name, colorHex] = key.split('|');
+    let t = null;
+    if (iwad) t = kind === 'F' ? getFlat(name) : getWall(name);
+    const info = t
+      ? { mat: new THREE.MeshLambertMaterial({ map: t.tex }), w: t.w, h: t.h }
+      : { mat: new THREE.MeshLambertMaterial({ color: colorHex }), w: 64, h: 64 };
+    return matCache[key] = info;
+  }
+  const B = key => {
+    let b = buckets.get(key);
+    if (!b) { b = { pos: [], uv: [], info: matInfo(key) }; buckets.set(key, b); }
+    return b;
   };
-  const quadV = (x0,y0,z0, x1,y1,z1, c) => { // vertical quad from two ground points + heights
-    push(c, x0,y0,-z0, x1,y0,-z1, x1,y1,-z1,  x0,y0,-z0, x1,y1,-z1, x0,y1,-z0);
+  const vert = (b, x, yy, ym, u, v) => { b.pos.push(x, yy, -ym); b.uv.push(u, v); };
+  const quadY = (key, x0, ym0, x1, ym1, yy) => {      // horizontal face
+    const b = B(key), w = b.info.w, h = b.info.h;
+    vert(b, x0, yy, ym0, x0/w, ym0/h); vert(b, x1, yy, ym0, x1/w, ym0/h); vert(b, x1, yy, ym1, x1/w, ym1/h);
+    vert(b, x0, yy, ym0, x0/w, ym0/h); vert(b, x1, yy, ym1, x1/w, ym1/h); vert(b, x0, yy, ym1, x0/w, ym1/h);
   };
+  const quadV = (key, ax, aym, bx, bym, y0, y1) => {  // vertical face
+    const b = B(key), w = b.info.w, h = b.info.h;
+    const uA = (ax === bx ? aym : ax)/w, uB = (ax === bx ? bym : bx)/w;
+    // Doom pegs wall textures to the TOP of the surface, drawing downward
+    const vT = 1, vB = 1 - (y1 - y0)/h;
+    vert(b, ax, y0, aym, uA, vB); vert(b, bx, y0, bym, uB, vB); vert(b, bx, y1, bym, uB, vT);
+    vert(b, ax, y0, aym, uA, vB); vert(b, bx, y1, bym, uB, vT); vert(b, ax, y1, aym, uA, vT);
+  };
+  const shade = (hex, f) => '#' + [1,3,5].map(i =>
+    Math.round(parseInt(hex.slice(i,i+2),16)*f).toString(16).padStart(2,'0')).join('');
   for (let y=0;y<D;y++) for (let x=0;x<W;x++) {
     const c = grid[gi(x,y)];
     const isStruct = c.wall||c.exit||c.door;
     const top = isStruct ? ceil : Math.min(c.h*HU, ceil);
-    const cc = new THREE.Color(c.wall ? WALLMATS[c.wmat||0][2] : c.exit ? '#3fae5a' : c.door ? '#c9a13b' : SURFS[c.surf][2]);
+    let topKey, sideKey;
+    if (c.wall)      { const wm = WALLMATS[c.wmat||0]; topKey = sideKey = 'W|'+wm[1]+'|'+wm[2]; }
+    else if (c.exit) { topKey = sideKey = 'W|SW1COMP|#3fae5a'; }
+    else if (c.door) { topKey = sideKey = 'W|BIGDOOR2|#c9a13b'; }
+    else {
+      const flat = isTp(c.thing) ? 'GATE' + (c.thing - TP_MIN + 1) : SURFS[c.surf][1];
+      const fcol = isTp(c.thing) ? '#8f7fd4' : SURFS[c.surf][2];
+      topKey = 'F|'+flat+'|'+fcol;
+      const wm = WALLMATS[c.wmat||0];
+      sideKey = 'W|'+wm[1]+'|'+shade(wm[2], 0.62);
+    }
     const X0=x*CS, X1=(x+1)*CS, Y0=y*CS, Y1=(y+1)*CS;
-    quadY(X0,Y0,X1,Y1, top + (isStruct?0:0.01), cc);
-    // side faces show the wall material (matches what the compiler exports)
-    const side = (isStruct ? cc.clone() : new THREE.Color(WALLMATS[c.wmat||0][2])).multiplyScalar(0.62);
+    quadY(topKey, X0, Y0, X1, Y1, top + (isStruct?0:0.01));
     // side faces where this column is taller than neighbor
     const nb = [[1,0,X1,Y0,X1,Y1],[ -1,0,X0,Y1,X0,Y0],[0,1,X1,Y1,X0,Y1],[0,-1,X0,Y0,X1,Y0]];
     for (const [dx,dy,ax,ay,bx,by] of nb) {
       const n = inb(x+dx,y+dy) ? grid[gi(x+dx,y+dy)] : null;
       const nTop = n ? (n.wall||n.exit||n.door ? ceil : Math.min(n.h*HU, ceil)) : 0;
-      if (top > nTop) quadV(ax, nTop, ay, bx, top, by, side);
+      if (top > nTop) quadV(sideKey, ax, ay, bx, by, nTop, top);
     }
   }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
-  g.setAttribute('color', new THREE.Float32BufferAttribute(col,3));
-  g.computeVertexNormals();
-  gl.world = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors:true }));
+  gl.world = new THREE.Group();
+  for (const b of buckets.values()) {
+    if (!b.pos.length) continue;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(b.pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(b.uv, 2));
+    g.computeVertexNormals();
+    gl.world.add(new THREE.Mesh(g, b.info.mat));
+  }
   gl.scene.add(gl.world);
   // headroom warning: tint cells red where the player (56 tall) can't fit
   if (gl.warn) { gl.scene.remove(gl.warn); gl.warn.geometry.dispose(); }
@@ -1015,7 +1224,26 @@ function rebuild() {
     const color = TPCOLORS[c.thing] ?? KEYCOLORS[c.thing] ?? (c.thing===2035 ? 0x8f4f2f
       : (THING_CATS[CAT_OF[c.thing]] || [0,0,0x4aa8ff])[2]);
     const fl = Math.min(c.h*HU, ceil);
-    const grp = thingMesh(c.thing, color, ceil - fl);
+    const spr = (iwad && SPRITES[c.thing]) ? getSprite(SPRITES[c.thing]) : null;
+    let grp;
+    if (spr) {                               // real game sprite, billboarded like in-engine
+      grp = new THREE.Group();
+      const s = new THREE.Sprite(c.thing === 58
+        ? new THREE.SpriteMaterial({ map: spr.mat.map, transparent: true, opacity: 0.45 })  // spectre
+        : spr.mat);
+      s.scale.set(spr.w, spr.h, 1);
+      s.position.y = HANGING.has(c.thing)
+        ? Math.max(spr.h/2, (ceil - fl) - spr.h/2)   // gore hangs from the ceiling
+        : spr.h/2;
+      grp.add(s);
+      const nose = new THREE.Mesh(new THREE.ConeGeometry(5, 14, 4),   // facing indicator
+        new THREE.MeshBasicMaterial({ color: 0xffd24a }));
+      nose.rotation.z = -Math.PI/2;
+      nose.position.set(20, 2.5, 0);
+      grp.add(nose);
+    } else {
+      grp = thingMesh(c.thing, color, ceil - fl);
+    }
     grp.rotation.y = (c.ang ?? defAng(c.thing)) * Math.PI/180;
     grp.position.set(x*CS+CS/2, fl, -(y*CS+CS/2));
     grp.userData = { thing:true, x, y };
@@ -1300,7 +1528,7 @@ function pick(e, cv) {
   const nx = ((e.clientX-r.left)/r.width)*2-1, ny = -((e.clientY-r.top)/r.height)*2+1;
   if (nx<-1||nx>1||ny<-1||ny>1) return null;
   gl.ray.setFromCamera({x:nx,y:ny}, gl.camera);
-  const hits = gl.ray.intersectObjects([gl.world, gl.ground], false);
+  const hits = gl.ray.intersectObjects([gl.world, gl.ground], true);
   if (!hits.length) return null;
   const h = hits[0];
   const p = h.point.clone();

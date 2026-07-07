@@ -102,6 +102,16 @@ page in the same browser. Use **Save Project** / **Open Project** for permanent 
 you can back up or share. **Undo** is Cmd/Ctrl+Z (per level; cleared when switching levels
 or resizing).
 
+## Real graphics (optional)
+
+Click **Load IWAD** and pick your own `doom2.wad` (or the free `freedoom2.wad`). The editor
+reads the game's palette, floor flats, wall textures, and monster/item sprites directly from
+the file — nothing is uploaded anywhere — and switches the 3D view to the real thing: painted
+walls and murals render with their actual textures, floors show their flats, and things
+appear as their in-game sprites (billboarded, like the engine draws them; Spectres are even
+translucent). Anything the WAD doesn't contain falls back to the colored shapes. The WAD
+isn't stored, so reload it after reopening the page.
+
 ## Development
 
 `verify-blocks.js` is a headless regression suite: it boots the editor in jsdom, builds a
@@ -120,6 +130,6 @@ All checks should pass; it also writes `blocks-test.wad` you can open in GZDoom.
 - No room-over-room: vanilla Doom maps are 2D plans with one floor and one ceiling per spot.
   Use raised terrain, stairs, and teleporters for the feeling of elevation.
 - Diagonals aren't supported — everything is axis-aligned blocks.
-- Texture art isn't rendered in the editor; blocks show representative colors. The real
-  textures appear in-game.
+- Without an IWAD loaded, blocks show representative colors instead of texture art
+  (see "Real graphics" above).
 - One thing per cell.
