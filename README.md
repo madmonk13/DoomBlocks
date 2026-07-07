@@ -1,4 +1,4 @@
-# DoomBlocks — a Lego-style Doom level editor
+# DoomBlocks — a simple, web-based Doom level editor
 
 **► [Try it in your browser](https://madmonk13.github.io/DoomBlocks/index.html)**
 
@@ -65,9 +65,18 @@ and can automatically step up **24**. Each grid cell is **64×64** — roughly a
 
 ## Teleporters
 
-Paint a **Teleport** floor to make a pad. Stepping on it sends the player to the nearest
-**Teleport Landing** thing (in the Starts category). Place the landing somewhere off the pad,
-and rotate it to set which way the player faces on arrival.
+Teleporters are placed as objects: **Things → Teleporters**, numbered 1–4. Endpoints with
+the same number form a network — stepping on any one sends the player to its **nearest
+same-number partner**, so two make a two-way pair and three or more make a chain. Each
+number is an independent network and maps to one of Doom's four stock pad textures
+(GATE1–4) on export; the colored markers in the editor just distinguish the networks.
+Rotate an endpoint (it's a normal thing — rotate, drag, select, delete all work) to set
+which way the player faces when arriving there. You don't paint anything: the pad texture
+and all teleport specials are generated automatically. Travel is one-hop only — arriving
+on a pad never re-triggers it (Doom teleport lines only fire when crossed from outside).
+
+(Advanced: pads and **Teleport Landing** things can still be placed separately with the floor
+paint and Things palette; unpaired pads send the player to the nearest landing.)
 
 ## Multiple levels
 

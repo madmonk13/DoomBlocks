@@ -88,7 +88,7 @@
       <button id="helpClose" title="Close">✕</button>
       <b>Build with blocks</b><br>
       Pick a tool on the right, then <b>click</b> a cell to apply it. <b>Right-click</b> removes
-      (thing → structure → one step of terrain, in that order).<br><br>
+      (teleporter pair → thing → structure → pad paint → one step of terrain, in that order).<br><br>
       <b>Drag</b> to orbit · <b>wheel</b> to zoom · <b>middle-drag / shift-drag / arrows / WASD</b> to pan.
       In Select mode, drag an object to move it to another cell.<br><br>
       Cells tinted <b style="color:#ff6a5a">red</b> have under 56 units of headroom — the player
@@ -99,9 +99,10 @@
       Terrain steps of 16 are walkable; 32 needs a Slab stair in between. Wall blocks reach the
       ceiling. Put a <b>Door</b> in a gap between walls. The <b>Exit switch</b> is a wall the player
       "uses" to end the level. Add a <b>Player start</b> before exporting.<br><br>
-      <b>Teleporters</b>: paint a Teleport floor to make a pad — stepping on it jumps to the nearest
-      <b>Teleport Landing</b> thing (place the landing off the pad). The little nose on each thing
-      marker shows its facing; use <b>Rotate thing</b> to turn it.<br><br>
+      <b>Teleporters</b> are objects (Things → Teleporters), numbered 1–4. Place two or more with
+      the same number and each sends the player to its nearest same-number partner — chains of
+      3, 4, or more work too. Rotate one to set which way the player faces on arrival. Each
+      number uses one of Doom's four pad textures, added automatically on export.<br><br>
       <b>+ Level</b> adds another map to the WAD — each level's exit switch leads to the next
       (MAP01 → MAP02 → …), and each level has its own size, ceiling, and sky.<br><br>
       Play the WAD: <span class="k">gzdoom -file episode.wad</span>
@@ -165,7 +166,7 @@
 let W = 32, D = 32;                           // grid size (editable)
 const CS = 64, HU = 16;                       // cell size, height unit
 const HMAX = 28;                              // max terrain in height-units (448)
-function newCol(){ return { h:0, wall:false, door:false, exit:false, surf:0, wmat:0, thing:0 }; }
+function newCol(){ return { h:0, wall:false, door:false, exit:false, surf:0, wmat:0, thing:0, tele:0 }; }
 let grid = Array.from({length:W*D}, newCol);
 let levels = [], cur = 0;                     // multi-level project state
 const gi = (x,y) => y*W + x;
@@ -182,6 +183,7 @@ const SURFS = [ // [label, flat, css color, sector special]
   ['Lava',   'LAVA1',    '#cf5f2f', 16],
   ['Blood',  'BLOOD1',   '#9f2f2f', 5],
   ['Teleport','GATE1',   '#8f7fd4', 0],
+  ['Tele arrival','GATE2','#7f6fc0', 0],
 ];
 const THING_CATS = [ // [category label, place-button label, hex color, [[id,name],...]]
   ['Starts', 'Place start', 0x5fd35f, [
@@ -214,13 +216,18 @@ const THING_CATS = [ // [category label, place-button label, hex color, [[id,nam
     [60,'Hanging Pair of Legs'],[62,'Hanging Leg']]],
   ['Boss & Special', 'Place special', 0xd07fd0, [
     [88,'Icon of Sin (boss brain)'],[89,'Boss Spawn Shooter'],[87,'Boss Spawn Spot'],[72,'Commander Keen']]],
+  ['Teleporters', 'Place teleporter', 0x8f7fd4, [
+    [9001,'Teleporter 1'],[9002,'Teleporter 2'],[9003,'Teleporter 3'],[9004,'Teleporter 4']]],
 ];
 const THING_TYPES = THING_CATS.flatMap(c => c[3]);            // flat list for name lookups
 const CAT_OF = {}; THING_CATS.forEach((c,i) => c[3].forEach(([id]) => CAT_OF[id] = i));
 const MONSTERS = new Set(THING_CATS[1][3].map(([id]) => id));
 const KEYCOLORS = { 5:0x4a6aff, 40:0x4a6aff, 6:0xffd24a, 39:0xffd24a, 13:0xff4a4a, 38:0xff4a4a };
+const TP_MIN = 9001, TP_MAX = 9004;           // teleporter pseudo-things (not real Doom types)
+const isTp = t => t >= TP_MIN && t <= TP_MAX;
+const TPCOLORS = { 9001:0x4a6aff, 9002:0xff4a4a, 9003:0x4fdf6f, 9004:0xffd24a };
 const COMPASS = ['E','NE','N','NW','W','SW','S','SE'];
-function defAng(t) { return (t<=4 || t===11 || t===14) ? 90 : MONSTERS.has(t) ? 270 : 0; }
+function defAng(t) { return (t<=4 || t===11 || t===14 || isTp(t)) ? 90 : MONSTERS.has(t) ? 270 : 0; }
 const EDIMS = { // enemy [radius, height] in map units, for scaled markers
   3004:[20,56], 9:[20,56], 65:[20,56], 84:[20,56], 3001:[20,56], 3002:[30,56], 58:[30,56],
   3006:[16,48], 3005:[31,56], 69:[24,64], 3003:[24,64], 66:[20,80], 67:[48,64], 68:[64,64],
@@ -266,6 +273,8 @@ const WALLMATS = [ // [label, wall texture, css color]
 const $ = id => document.getElementById(id);
 let tool = 'terrain';
 let terraDir = 'raise', terraStep = 32, brushN = 1;
+const TELE_IDX = SURFS.findIndex(s => s[1] === 'GATE1');    // legacy painted pads
+const ARRIVE_IDX = SURFS.findIndex(s => s[1] === 'GATE2');
 function brushCells(x, y) {   // N×N brush centered on the clicked cell (clipped to grid)
   const off = Math.floor((brushN-1)/2), out = [];
   for (let j=0;j<brushN;j++) for (let i=0;i<brushN;i++) {
@@ -287,7 +296,10 @@ $('catSel').onchange = () => { fillThings(); tool = 'thing'; syncTools(); };
 $('thingSel').onchange = () => { tool = 'thing'; syncTools(); };
 fillThings();
 let paintSurf = 0, paintWall = 0;
-SURFS.forEach(([label], i) => $('surfSel').add(new Option(label, i)));
+SURFS.forEach(([label], i) => {
+  if (i === TELE_IDX || i === ARRIVE_IDX) return;   // teleporters are placed as objects now
+  $('surfSel').add(new Option(label, i));
+});
 WALLMATS.forEach(([label], i) => $('wallSel').add(new Option(label, i)));
 const BASE_WALLS = 9;   // plain materials only — murals are for painting, not the boundary
 WALLMATS.slice(0, BASE_WALLS).forEach(([label], i) => $('borderSel').add(new Option('Border: ' + label, i)));
@@ -509,12 +521,22 @@ function floodFill(x0, y0, wallMode) {
     }
   }
 }
+function removeTeleporter(id) {   // clears BOTH ends of a pair
+  for (const c of grid) {
+    if (c.tele !== id) continue;
+    if (c.surf === TELE_IDX || c.surf === ARRIVE_IDX) c.surf = 0;
+    if (c.thing === 14) c.thing = 0;
+    c.tele = 0; c.tw = false;
+  }
+}
 function smartRemove(x, y) {
   if (!inb(x,y)) return;
   const c = grid[gi(x,y)];
   checkpoint();
-  if (c.thing) c.thing = 0;
+  if (c.tele) { removeTeleporter(c.tele); $('stMsg').textContent = 'teleporter pair removed'; }
+  else if (c.thing) c.thing = 0;
   else if (c.wall||c.door||c.exit) c.wall=c.door=c.exit=false;
+  else if (c.surf === TELE_IDX || c.surf === ARRIVE_IDX) c.surf = 0;   // unpaired pad paint
   else c.h = Math.max(0, c.h-1);
   rebuild();
 }
@@ -530,8 +552,10 @@ function compile() {
     if (c.wall || c.exit) continue;
     if (!c.door) {
       const s = SURFS[c.surf];
-      props[gi(x,y)] = { floorh: Math.min(c.h*HU, ceil), ceilh: ceil, floort: s[1],
-        ceilt: sky ? 'F_SKY1' : 'CEIL3_5', light: 192, special: s[3], tag: 0, door: false };
+      const tp = isTp(c.thing);   // teleporter object: its cell becomes a GATE pad sector
+      props[gi(x,y)] = { floorh: Math.min(c.h*HU, ceil), ceilh: ceil,
+        floort: tp ? 'GATE' + (c.thing - TP_MIN + 1) : s[1],
+        ceilt: sky ? 'F_SKY1' : 'CEIL3_5', light: 192, special: tp ? 0 : s[3], tag: 0, door: false };
     }
   }
   for (let y=0;y<D;y++) for (let x=0;x<W;x++) {    // doors: floor = lowest open neighbor
@@ -572,16 +596,22 @@ function compile() {
   const m = { vertices:[], linedefs:[], sidedefs:[], sectors: sectors.map(s => {
       const { door, ...rest } = s; return rest; }), things:[] };
   // teleporters: GATE1 pad regions send the player to the nearest Teleport Landing (thing 14)
-  const isPad = r => r>=0 && !sectors[r].door && sectors[r].floort === 'GATE1';
+  const isPad = r => r>=0 && !sectors[r].door && /^GATE[1-4]$/.test(sectors[r].floort);
   const padTarget = {};
   {
-    const landings = [];
-    for (let y=0;y<D;y++) for (let x=0;x<W;x++)
-      if (grid[gi(x,y)].thing === 14 && reg[gi(x,y)] >= 0)
-        landings.push({ x:x+0.5, y:y+0.5, sec: reg[gi(x,y)] });
-    const secTag = {}; let nextTag = 1;
-    for (const l of landings)
-      if (!secTag[l.sec]) { secTag[l.sec] = nextTag++; m.sectors[l.sec].tag = secTag[l.sec]; }
+    const endpoints = [], landings = [], secTag = {};
+    let nextTag = 1;
+    const tagOf = r => {
+      if (!secTag[r]) { secTag[r] = nextTag++; m.sectors[r].tag = secTag[r]; }
+      return secTag[r];
+    };
+    for (let y=0;y<D;y++) for (let x=0;x<W;x++) {
+      const c = grid[gi(x,y)];
+      const r = reg[gi(x,y)];
+      if (r < 0) continue;
+      if (isTp(c.thing)) { endpoints.push({ r, color: c.thing, x: x+0.5, y: y+0.5 }); tagOf(r); }
+      else if (c.thing === 14) { landings.push({ x: x+0.5, y: y+0.5, sec: r }); tagOf(r); }
+    }
     const cent = {};
     for (let y=0;y<D;y++) for (let x=0;x<W;x++) {
       const r = reg[gi(x,y)];
@@ -590,14 +620,27 @@ function compile() {
       cent[r].sx += x+0.5; cent[r].sy += y+0.5; cent[r].n++;
     }
     for (const r in cent) {
-      const cx = cent[r].sx/cent[r].n, cy = cent[r].sy/cent[r].n;
-      let best = null, bd = Infinity;
-      for (const l of landings) {
-        if (l.sec === +r) continue;                    // never teleport a pad to itself
-        const d2 = (l.x-cx)**2 + (l.y-cy)**2;
-        if (d2 < bd) { bd = d2; best = l; }
+      const eps = endpoints.filter(e => e.r === +r);
+      if (eps.length) {
+        // teleporter object: send the player to the nearest endpoint of the SAME color
+        let best = null, bd = Infinity;
+        for (const e of eps) for (const o of endpoints) {
+          if (o.color !== e.color || o.r === e.r) continue;
+          const d2 = (o.x-e.x)**2 + (o.y-e.y)**2;
+          if (d2 < bd) { bd = d2; best = o; }
+        }
+        if (best) padTarget[r] = secTag[best.r];
+      } else if (sectors[r].floort === 'GATE1') {
+        // legacy painted pads: nearest landing thing
+        const cx = cent[r].sx/cent[r].n, cy = cent[r].sy/cent[r].n;
+        let best = null, bd = Infinity;
+        for (const l of landings) {
+          if (l.sec === +r) continue;                  // never teleport a pad to itself
+          const d2 = (l.x-cx)**2 + (l.y-cy)**2;
+          if (d2 < bd) { bd = d2; best = l; }
+        }
+        if (best) padTarget[r] = secTag[best.sec];
       }
-      if (best) padTarget[r] = secTag[best.sec];
     }
   }
   const vmap = new Map();
@@ -696,7 +739,9 @@ function compile() {
     const c = grid[gi(x,y)];
     if (!c.thing) continue;
     m.things.push({ x:x*CS+CS/2, y:y*CS+CS/2,
-      angle: c.ang ?? defAng(c.thing), type:c.thing, flags:7 });
+      angle: c.ang ?? defAng(c.thing),
+      type: isTp(c.thing) ? 14 : c.thing,    // teleporters export as their own arrival landing
+      flags:7 });
   }
   return m;
 }
@@ -791,6 +836,17 @@ $('btnExport').onclick = () => {
     }
     if (crampedStart) problems.push(slot + ': Player 1 Start has under 56 units of headroom — the player will be stuck');
     else if (cramped) problems.push(slot + ': ' + cramped + ' thing(s) on cells with under 56 units of headroom (red-tinted in the editor)');
+    // teleporters with no same-color partner have nowhere to go — warn
+    const tpCount = {};
+    for (const c of grid) if (isTp(c.thing)) tpCount[c.thing] = (tpCount[c.thing] || 0) + 1;
+    const lonely = Object.keys(tpCount).filter(k => tpCount[k] === 1)
+      .map(k => THING_TYPES.find(t => t[0] === +k)[1]);
+    if (lonely.length)
+      problems.push(slot + ': ' + lonely.join(', ') + ' has no matching color endpoint — place at least two of the same color');
+    // legacy painted pads without a landing
+    const hasPad = grid.some(c => !c.wall && !c.exit && !c.door && c.surf === TELE_IDX && !isTp(c.thing));
+    if (hasPad && !m.linedefs.some(l => l.special === 97))
+      problems.push(slot + ': teleport pad(s) have nowhere to go — place a Teleport Landing (Things → Starts) off the pad');
     maps.push({ m, slot, sky: $('sky').value, name: L.name || '' });
   });
   applyLevelState(levels[cur]);                // restore the level being edited
@@ -956,7 +1012,7 @@ function rebuild() {
   for (let y=0;y<D;y++) for (let x=0;x<W;x++) {
     const c = grid[gi(x,y)];
     if (!c.thing) continue;
-    const color = KEYCOLORS[c.thing] ?? (c.thing===2035 ? 0x8f4f2f
+    const color = TPCOLORS[c.thing] ?? KEYCOLORS[c.thing] ?? (c.thing===2035 ? 0x8f4f2f
       : (THING_CATS[CAT_OF[c.thing]] || [0,0,0x4aa8ff])[2]);
     const fl = Math.min(c.h*HU, ceil);
     const grp = thingMesh(c.thing, color, ceil - fl);
@@ -964,6 +1020,19 @@ function rebuild() {
     grp.position.set(x*CS+CS/2, fl, -(y*CS+CS/2));
     grp.userData = { thing:true, x, y };
     gl.thingGroup.add(grp);
+  }
+  // teleporter pair rings: pad and its destination share a color
+  for (let y=0;y<D;y++) for (let x=0;x<W;x++) {
+    const c = grid[gi(x,y)];
+    if (!c.tele) continue;
+    const isPadCell = !c.wall && !c.exit && !c.door && c.surf === TELE_IDX;
+    if (!isPadCell && c.thing !== 14) continue;
+    const col = new THREE.Color().setHSL((c.tele * 0.37) % 1, 0.75, 0.55);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(22, 2, 8, 24),
+      new THREE.MeshBasicMaterial({ color: col }));
+    ring.rotation.x = -Math.PI/2;
+    ring.position.set(x*CS+CS/2, Math.min(c.h*HU, ceil) + 1.5, -(y*CS+CS/2));
+    gl.thingGroup.add(ring);
   }
   gl.scene.add(gl.thingGroup);
 }
@@ -1068,6 +1137,14 @@ function thingMesh(t, color, avail) {
     else if (t===72) { const y0 = Math.max(30, avail); add(new THREE.CylinderGeometry(1.2, 1.2, 14, 6), y0 - 7, rope); add(new THREE.BoxGeometry(12, 20, 8), y0 - 24); }
     else if (t===87) add(new THREE.CylinderGeometry(20, 20, 2, 16), 1);
     else { add(new THREE.CylinderGeometry(2.5, 2.5, 30, 8), 15); add(new THREE.BoxGeometry(12, 10, 10), 34); }
+  } else if (cat === 8) {                              // teleporter: pad disc + glow beam
+    add(new THREE.CylinderGeometry(24, 24, 2.5, 20), 1.2);
+    const ring = add(new THREE.TorusGeometry(19, 2.5, 8, 24), 4);
+    ring.rotation.x = -Math.PI/2;
+    add(new THREE.CylinderGeometry(2, 2, 46, 8), 26,
+      new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.35 }));
+    add(new THREE.SphereGeometry(5, 8, 6), 50);
+    nose(28, 6);                                       // arrival facing
   } else {
     add(new THREE.ConeGeometry(16, 44, 5), 22);        // unknown type fallback
   }
@@ -1112,7 +1189,9 @@ $('tiRotate').onclick = () => {
 $('tiDelete').onclick = () => {
   if (!selCell) return;
   checkpoint();
-  grid[gi(selCell.x, selCell.y)].thing = 0;
+  const c = grid[gi(selCell.x, selCell.y)];
+  if (c.tele) removeTeleporter(c.tele);     // deleting a landing removes its pad too
+  else c.thing = 0;
   rebuild();
 };
 $('tiClose').onclick = () => { selCell = null; refreshInfo(); };
