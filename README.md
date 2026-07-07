@@ -1,12 +1,11 @@
 # DoomBlocks — a Lego-style Doom level editor
 
-DoomBlocks (`doom-blocks.html`) is a single-file, browser-based level editor for classic Doom.
-You build maps by clicking blocks on a 3D grid — terrain, walls, doors, liquids, monsters —
-and export a playable WAD. No installation: open the file in any browser (the 3D view loads
-Three.js from a CDN, so the first open needs internet).
+**► [Try it in your browser](https://madmonk13.github.io/DoomBlocks/index.html)**
 
-A companion freeform 2D editor (`doom-editor.html`) is also included for traditional
-vertex/linedef editing with a first-person preview; this README focuses on DoomBlocks.
+DoomBlocks (`index.html`) is a single-file, browser-based level editor for classic Doom.
+You build maps by clicking blocks on a 3D grid — terrain, walls, doors, liquids, monsters —
+and export a playable WAD. No installation: open the link above or the file in any browser
+(the 3D view loads Three.js from a CDN, so it needs internet on first load).
 
 ## Quick start
 
