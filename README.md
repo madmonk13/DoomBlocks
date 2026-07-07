@@ -42,7 +42,12 @@ and can automatically step up **24**. Each grid cell is **64×64** — roughly a
   using the same step and brush as Terrain. Used on a door, it lowers the door's open
   neighbor cells instead of the door itself (a door has no ceiling of its own — it always opens
   to match its neighbors), capping how high the door opens and leaving ordinary wall above it,
-  just like doors in the original games.
+  just like doors in the original games. Orbit view never draws ceilings at all (so you can see
+  into rooms from above), so a lowered cell shows instead as a translucent blue cap-and-collar
+  marker there; switch to Walk to see the real thing. **Ceiling paint / Fill** — 6 flats. Sky
+  levels always override painted (and default) ceilings with the sky, since Sky is a whole-level
+  setting — painting still affects the compiled map's sectors, but the flat itself won't be
+  visible on a Sky level.
 - **Erase column** — resets a cell completely.
 - **Wall** — solid block reaching the ceiling. **Door** — place in a gap between walls; it becomes
   a working door, usable from both sides. **Exit switch** — a wall the player "uses" to finish the

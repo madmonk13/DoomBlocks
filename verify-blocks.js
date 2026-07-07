@@ -159,6 +159,35 @@ ok(aboveDoor.length === 6 && aboveDoor.every(l =>
 ok(m3.linedefs.filter(l => l.special === 1).every(l => m3.sidedefs[l.front].upper === 'BIGDOOR2'),
    'door face itself is still BIGDOOR2 — only the corridor ceiling beside it steps down');
 
+// ---- ceiling paint ----
+w.eval(`
+  tool = 'cpaint'; paintCeil = 2;   // 'Tech light' -> TLITE6_4
+  applyTool(13, 17);
+  window.__m4 = compile();
+`);
+ok(w.eval('grid[gi(13,17)].cmat') === 2, 'ceiling paint tool sets cmat on the clicked cell');
+const m4 = w.__m4;
+const paintedCeil = m4.sectors.filter(s => s.ceilt === 'TLITE6_4');
+ok(paintedCeil.length === 1 && paintedCeil[0].floorh === 0,
+   'painted ceiling cell becomes its own sector using the new flat');
+ok(m4.sectors.some(s => s.ceilt === 'CEIL3_5'), 'rest of the room keeps the default ceiling flat');
+
+// fill ceiling: pre-match a neighbor by hand, then flood-fill should absorb it
+w.eval(`
+  grid[gi(13,18)].cmat = 2;   // already matches (13,17), so the fill should spread onto it
+  paintCeil = 3; tool = 'fillceil';
+  applyTool(13, 17);
+  window.__m5 = compile();
+`);
+ok(w.eval('grid[gi(13,17)].cmat') === 3 && w.eval('grid[gi(13,18)].cmat') === 3,
+   'fill ceiling spreads to the connected, matching-ceiling neighbor');
+
+// sky always overrides painted ceilings (level-wide setting, matching the real F_SKY1 hack)
+w.eval("$('sky').value = 'SKY1'; window.__m6 = compile(); $('sky').value = '';");
+const m6 = w.__m6;
+ok(m6.sectors.every(s => (s.floorh === s.ceilh) ? s.ceilt === 'FLAT1' : s.ceilt === 'F_SKY1'),
+   'sky overrides ceiling paint on every non-door sector');
+
 // WAD bytes
 const buf = w.eval('wadBytes(window.__m, "MAP01")');
 const dv = new w.DataView(buf), u8 = new w.Uint8Array(buf);
