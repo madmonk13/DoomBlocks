@@ -188,6 +188,120 @@ const m6 = w.__m6;
 ok(m6.sectors.every(s => (s.floorh === s.ceilh) ? s.ceilt === 'FLAT1' : s.ceilt === 'F_SKY1'),
    'sky overrides ceiling paint on every non-door sector');
 
+// ---- locked door (re-place the same door at (15,10) through the tool, with a key set) ----
+// A locked door's entire face uses the matching colored door skin (DOORBLU/DOORYEL/DOORRED)
+// instead of BIGDOOR2 — the same single crossing-line mechanism as a plain door, just a
+// different texture name, so it's guaranteed to render as reliably as any ordinary door.
+w.eval(`
+  tool = 'door'; doorLock = 1;   // Blue
+  applyTool(15, 10);
+  window.__m7 = compile();
+`);
+ok(w.eval('grid[gi(15,10)].lock') === 1, 'door tool sets the lock on the (re-)placed door');
+const m7 = w.__m7;
+const lockedLines = m7.linedefs.filter(l => l.special === 26);
+ok(lockedLines.length === 2, 'locked door compiles with the Blue DR special (26): ' + lockedLines.length);
+ok(m7.linedefs.filter(l => l.special === 1).length === 0, 'no lines left with the plain (unlocked) DR special');
+ok(lockedLines.every(l => m7.sidedefs[l.front].upper === 'DOORBLU' && m7.sidedefs[l.back].upper === 'DOORBLU'),
+   'locked door faces use the full-size Blue door texture (DOORBLU), not BIGDOOR2');
+ok(!('lock' in m7.sectors.find(s => s.floorh === s.ceilh)), 'lock field does not leak into the exported sector');
+// the jamb walls stay plain DOORTRAK — the color lives on the door face itself now
+const trakLocked = m7.linedefs.filter(l => l.back < 0 && m7.sidedefs[l.front].middle === 'DOORTRAK');
+ok(trakLocked.length === 2, 'door sides against walls still use plain DOORTRAK when locked: ' + trakLocked.length);
+// clear the lock back off so it doesn't affect anything reusing this grid afterward
+w.eval("tool = 'door'; doorLock = 0; applyTool(15, 10);");
+
+// ---- ¼×¼ (16-unit) Terrain/Ceiling sub-cell brush ----
+// Sculpt the NW quarter of an open cell inside the room (13,13), leaving the other three
+// quarters flat, and confirm it compiles into real sub-cell-resolution sector geometry.
+w.eval(`
+  terraStep = 16; terraDir = 'raise'; tool = 'terrain'; terraSub = true;
+  applyTool(13, 13, 0, 0);
+  applyTool(13, 13, 0, 0);   // two 16-unit steps = 32 units total
+  window.__m8 = compile();
+`);
+const c8 = w.eval('grid[gi(13,13)]');
+ok(Array.isArray(c8.sh) && c8.sh.length === 16 && c8.sh[0] === 2 && c8.sh.slice(1).every(v => v === 0),
+   '¼×¼ terrain brush raises only the targeted quarter, others stay 0: ' + JSON.stringify(c8.sh));
+const m8 = w.__m8;
+ok(m8.sectors.some(s => s.floorh === 32), 'sculpted quarter compiles to its own sector at floor height 32');
+const subVerts = m8.vertices.filter(v => v.x === 13*64+16 && v.y >= 13*64 && v.y <= 13*64+16);
+ok(subVerts.length > 0, 'compiled geometry has a vertex at the 16-unit sub-cell boundary, not just 64-unit cell edges');
+// flattening all 16 quarters back to the same height collapses `sh` back to a plain scalar
+w.eval(`
+  for (let syi=0; syi<4; syi++) for (let sxi=0; sxi<4; sxi++) {
+    if (sxi===0 && syi===0) continue;
+    applyTool(13, 13, sxi, syi); applyTool(13, 13, sxi, syi);
+  }
+`);
+const c8b = w.eval('grid[gi(13,13)]');
+ok(c8b.sh === null && c8b.h === 2, 'once every quarter matches, the cell collapses back to a uniform cell: sh=' +
+   JSON.stringify(c8b.sh) + ' h=' + c8b.h);
+w.eval(`grid[gi(13,13)] = newCol();`);   // reset for a clean grid before the ceiling sub-test
+
+// ¼×¼ ceiling brush: lower one quarter's ceiling, leave the rest at the room's default
+w.eval(`
+  ceilStep = 16; ceilDir = 'lower'; tool = 'ceil'; ceilSub = true;
+  applyTool(13, 13, 3, 3);
+  window.__m9 = compile();
+`);
+const c9 = w.eval('grid[gi(13,13)]');
+ok(Array.isArray(c9.sch) && c9.sch[15] === 1 && c9.sch.slice(0,15).every(v => v === 0),
+   '¼×¼ ceiling brush lowers only the targeted quarter: ' + JSON.stringify(c9.sch));
+const m9 = w.__m9;
+ok(m9.sectors.some(s => s.floorh === 0 && s.ceilh === 112), 'sculpted quarter compiles with a dropped ceiling (128-16=112)');
+w.eval(`grid[gi(13,13)] = newCol(); doorLock = 0;`);
+
+// ---- drag-to-paint: one undo checkpoint per stroke, not per cell ----
+// mirrors what the mousemove handler does while dragging: checkpoint() once, then every
+// newly-entered cell calls applyTool(..., true) to skip its own internal checkpoint.
+const undoDepth0 = w.eval('undoStack.length');
+w.eval(`
+  tool = 'wall';
+  checkpoint();
+  for (let x = 24; x <= 27; x++) applyTool(x, 24, undefined, undefined, true);
+`);
+const strokeWalls = w.eval('[24,25,26,27].every(x => grid[gi(x,24)].wall)');
+ok(strokeWalls, 'drag-paint stroke placed walls in every cell it crossed');
+ok(w.eval('undoStack.length') === undoDepth0 + 1, 'a 4-cell drag-paint stroke added exactly one undo checkpoint');
+w.eval('undo();');
+ok(w.eval('[24,25,26,27].some(x => grid[gi(x,24)].wall)') === false, 'undo reverts the whole stroke in one step');
+
+// ---- stamp: copy a rectangular region, paste it elsewhere (deep-cloned, not shared refs) ----
+w.eval(`
+  const wall2 = (x,y) => { grid[gi(x,y)].wall = true; };
+  for (let x=24;x<=26;x++){ wall2(x,24); wall2(x,26); }
+  for (let y=24;y<=26;y++){ wall2(24,y); wall2(26,y); }
+  grid[gi(25,25)].surf = 6;                 // nukage in the middle
+  stampCopy(24, 24, 26, 26);
+  window.__stampBuf = { w: stampBuffer.w, h: stampBuffer.h, n: stampBuffer.cells.length };
+  stampPaste(1, 24);                        // paste elsewhere on the same map
+`);
+const sb = w.__stampBuf;
+ok(sb.w === 3 && sb.h === 3 && sb.n === 9, 'stamp copy captured a 3×3 region: ' + JSON.stringify(sb));
+const pastedRingOk = w.eval(`
+  [[1,24],[2,24],[3,24],[1,26],[2,26],[3,26],[1,25],[3,25]].every(([x,y]) => grid[gi(x,y)].wall) &&
+  grid[gi(2,25)].surf === 6
+`);
+ok(pastedRingOk, 'stamp paste reproduced the wall ring and painted floor at the destination');
+w.eval(`grid[gi(2,25)].surf = 0;`);
+ok(w.eval('grid[gi(25,25)].surf') === 6, 'editing a pasted cell does not mutate the original source cell (deep clone)');
+
+// player-start dedup on paste: a stamp carrying a start displaces any other start on the map
+w.eval(`
+  grid[gi(5,5)].thing = 1;
+  grid[gi(25,25)].thing = 1;
+  stampCopy(24, 24, 26, 26);
+  stampPaste(1, 24);
+`);
+ok(w.eval('grid.filter(c => c.thing === 1).length') === 1, 'pasting a stamp with a Player 1 Start clears any other start');
+ok(w.eval('grid[gi(2,25)].thing') === 1, 'the surviving start is the one the paste brought in');
+// clean up this scratch area so it doesn't affect anything reusing this grid afterward
+w.eval(`
+  for (let y=24;y<=26;y++) for (let x=0;x<=27;x++) grid[gi(x,y)] = newCol();
+  window.__m = compile();
+`);
+
 // WAD bytes
 const buf = w.eval('wadBytes(window.__m, "MAP01")');
 const dv = new w.DataView(buf), u8 = new w.Uint8Array(buf);

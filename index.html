@@ -123,14 +123,13 @@
   </div>
   <div id="sidebar">
     <h3>Mode</h3>
-    <button class="tool" data-tool="select" title="Click any placed object to inspect it"><span class="chip" style="background:#ffd24a"></span>Select object</button>
+    <button class="tool" data-tool="select" title="Click any placed object to inspect it, or drag to move it. Camera drag-to-orbit now only applies in this mode — other tools drag-paint instead"><span class="chip" style="background:#ffd24a"></span>Select/Move</button>
     <h3>Terrain</h3>
     <div style="display:flex;gap:4px">
       <button class="tool" data-tool="terrain" data-dir="raise" style="flex:1" title="Click to raise terrain by the step"><span class="chip" style="background:#a5abb1"></span>Raise</button>
       <button class="tool" data-tool="terrain" data-dir="lower" style="flex:1" title="Click to lower terrain by the step"><span class="chip" style="background:#4a4f54"></span>Lower</button>
     </div>
     <div id="optTerrain" class="opts hidden">
-      <div style="font-size:11px;color:var(--dim,#888);margin-bottom:4px">Step &amp; brush — shared by Terrain and Ceiling</div>
       <div class="row"><label>Step</label>
         <button id="stepMinus" title="16 = one stair step; above 24 the player can't walk up">−</button>
         <span id="stepLbl" style="min-width:34px;text-align:center;color:var(--text)">32</span>
@@ -138,6 +137,7 @@
       </div>
       <div class="row"><label>Brush</label>
         <select id="brushSel" style="flex:1">
+          <option value="q">¼×¼ (16 units)</option>
           <option value="1">1×1 (1 cell)</option>
           <option value="2">2×2 (4 cells)</option>
           <option value="3">3×3 (9 cells)</option>
@@ -152,6 +152,24 @@
       <button class="tool" data-tool="ceil" data-dir="lower" style="flex:1" title="Lower the ceiling. Used on a door, this caps how high the door opens and leaves normal wall above it instead"><span class="chip" style="background:#565b68"></span>Lower</button>
       <button class="tool" data-tool="ceil" data-dir="raise" style="flex:1" title="Raise a lowered ceiling back toward the level ceiling"><span class="chip" style="background:#7d838f"></span>Raise</button>
     </div>
+    <div id="optCeilStep" class="opts hidden">
+      <div class="row"><label>Step</label>
+        <button id="ceilStepMinus" title="16 = one stair step; above 24 the player can't walk up">−</button>
+        <span id="ceilStepLbl" style="min-width:34px;text-align:center;color:var(--text)">32</span>
+        <button id="ceilStepPlus">+</button>
+      </div>
+      <div class="row"><label>Brush</label>
+        <select id="ceilBrushSel" style="flex:1">
+          <option value="q">¼×¼ (16 units)</option>
+          <option value="1">1×1 (1 cell)</option>
+          <option value="2">2×2 (4 cells)</option>
+          <option value="3">3×3 (9 cells)</option>
+          <option value="4">4×4 (16 cells)</option>
+          <option value="5">5×5 (25 cells)</option>
+          <option value="6">6×6 (36 cells)</option>
+        </select>
+      </div>
+    </div>
     <div style="display:flex;gap:4px">
       <button class="tool" data-tool="cpaint" style="flex:1"><span class="chip" id="ceilChip"></span>Paint</button>
       <button class="tool" data-tool="fillceil" style="flex:1" title="Flood-fill the connected area of matching ceiling">Fill</button>
@@ -162,7 +180,15 @@
     <button class="tool" data-tool="erase"><span class="chip" style="background:#2a2a30"></span>Erase column</button>
     <h3>Structure</h3>
     <button class="tool" data-tool="wall"><span class="chip" style="background:#5f6a80"></span>Wall (to ceiling)</button>
-    <button class="tool" data-tool="door"><span class="chip" style="background:#c9a13b"></span>Door</button>
+    <button class="tool" data-tool="door" title="Place with the lock below (None = an ordinary door). Re-click an existing door to change its lock"><span class="chip" id="lockChip" style="background:#c9a13b"></span>Door</button>
+    <div id="optDoor" class="opts hidden">
+      <select id="lockSel" style="width:100%">
+        <option value="0">No lock (ordinary door)</option>
+        <option value="1">Blue key required</option>
+        <option value="2">Yellow key required</option>
+        <option value="3">Red key required</option>
+      </select>
+    </div>
     <button class="tool" data-tool="exit"><span class="chip" style="background:#3fae5a"></span>Exit switch</button>
     <h3>Floor paint</h3>
     <div style="display:flex;gap:4px">
@@ -187,6 +213,14 @@
       <select id="thingSel" style="width:100%;margin-top:4px"></select>
     </div>
     <button class="tool" data-tool="rotate" title="Click a placed object to turn it 45° counter-clockwise; new objects keep the last rotation"><span class="chip" style="background:#d8d8dc"></span>Rotate Object (45°)</button>
+    <h3>Stamp</h3>
+    <div style="display:flex;gap:4px">
+      <button class="tool" data-tool="stamp" data-stampmode="copy" style="flex:1" title="Drag a rectangle to copy that area (or click for a single cell)"><span class="chip" style="background:#4aa8ff"></span>Copy</button>
+      <button class="tool" data-tool="stamp" data-stampmode="paste" style="flex:1" title="Click to paste the copied area, centered on the cursor"><span class="chip" style="background:#4aa8ff"></span>Paste</button>
+    </div>
+    <div id="optStamp" class="opts hidden">
+      <div id="stampInfo" style="color:var(--dim)">nothing copied yet</div>
+    </div>
     <h3>Info</h3>
     <div class="row"><label>Grid</label><span id="infoGrid" style="color:var(--dim)"></span></div>
     <div class="row"><label>Blocks</label><span id="infoBlocks" style="color:var(--dim)">0</span></div>
@@ -200,11 +234,21 @@
 let W = 32, D = 32;                           // grid size (editable)
 const CS = 64, HU = 16;                       // cell size, height unit
 const HMAX = 28;                              // max terrain in height-units (448)
-function newCol(){ return { h:0, ch:0, wall:false, door:false, exit:false, surf:0, wmat:0, cmat:0, thing:0, tele:0 }; }
+const SUBN = 4, SS = CS/SUBN;                 // Terrain/Ceiling can also sculpt in 16-unit quarters
+function newCol(){ return { h:0, ch:0, wall:false, door:false, exit:false, surf:0, wmat:0, cmat:0, lock:0, thing:0, tele:0, sh:null, sch:null }; }
 let grid = Array.from({length:W*D}, newCol);
 let levels = [], cur = 0;                     // multi-level project state
 const gi = (x,y) => y*W + x;
 const inb = (x,y) => x>=0 && x<W && y>=0 && y<D;
+// sub-cell (quarter-cell) floor/ceiling heights: a cell's `sh`/`sch` are either null (uniform —
+// use the plain `h`/`ch` scalar, the common case) or a flat 16-entry array (row-major, index
+// sidx(sxi,syi), sxi/syi each 0..3) overriding height at 16-unit resolution. Only Terrain and
+// Ceiling ever create these; every other tool (walls, doors, paint, things) stays whole-cell.
+const sidx = (sxi,syi) => syi*SUBN+sxi;
+function subFloorH(c, sxi, syi) { return c.sh ? c.sh[sidx(sxi,syi)] : c.h; }
+function subCeilCh(c, sxi, syi) { return c.sch ? c.sch[sidx(sxi,syi)] : (c.ch||0); }
+function collapseSh(c) { if (c.sh && c.sh.every(v => v === c.sh[0])) { c.h = c.sh[0]; c.sh = null; } }
+function collapseSch(c) { if (c.sch && c.sch.every(v => v === c.sch[0])) { c.ch = c.sch[0]; c.sch = null; } }
 
 const SURFS = [ // [label, flat, css color, sector special]
   ['Tech',   'FLOOR4_8', '#878c91', 0],
@@ -267,6 +311,17 @@ const EDIMS = { // enemy [radius, height] in map units, for scaled markers
   3006:[16,48], 3005:[31,56], 69:[24,64], 3003:[24,64], 66:[20,80], 67:[48,64], 68:[64,64],
   71:[31,56], 64:[20,56], 7:[128,100], 16:[40,110] };
 const WALLTEX = 'STARTAN2', DOORTEX = 'BIGDOOR2', SWTEX = 'SW1COMP';
+// A locked door's entire face uses the matching colored door skin (DOORBLU/DOORYEL/DOORRED —
+// real, confirmed-colorful Doom II textures) instead of the traditional BIGDOOR2. This is the
+// same single-line door mechanism as an ordinary door, just a different texture name, so it's
+// unmissable (the whole door, dead center in view) and renders exactly as reliably as any
+// plain door.
+const LOCKS = [ // [label, door texture, css color, DR special] — color matches the key pickups
+  ['None',   DOORTEX,    '#c9a13b', 1],
+  ['Blue',   'DOORBLU',  '#4a6aff', 26],
+  ['Yellow', 'DOORYEL',  '#ffd24a', 27],
+  ['Red',    'DOORRED',  '#ff4a4a', 28],
+];
 const WALLMATS = [ // [label, wall texture, css color]
   ['Tech',     'STARTAN2', '#8f8878'],
   ['Stone',    'STONE2',   '#7d7d7d'],
@@ -314,14 +369,17 @@ const CEILMATS = [ // [label, ceiling flat, css color] — ignored on Sky levels
 ];
 
 const $ = id => document.getElementById(id);
-let tool = 'terrain';
-let terraDir = 'raise', terraStep = 32, brushN = 1;
+let tool = 'select';
+let terraDir = 'raise', terraStep = 32, brushN = 1, terraSub = false;
+let ceilDir = 'lower', ceilStep = 32, ceilBrushN = 1, ceilSub = false;   // Ceiling has its own step/brush/direction, independent of Terrain
+// terraSub/ceilSub: true when the ¼×¼ (16-unit) brush is selected — targets a single quarter
+// of the clicked cell instead of the whole N×N cell footprint.
 let stickyAng = null;   // once the user rotates something, new placements reuse that facing
 const TELE_IDX = SURFS.findIndex(s => s[1] === 'GATE1');    // legacy painted pads
 const ARRIVE_IDX = SURFS.findIndex(s => s[1] === 'GATE2');
-function brushCells(x, y) {   // N×N brush centered on the clicked cell (clipped to grid)
-  const off = Math.floor((brushN-1)/2), out = [];
-  for (let j=0;j<brushN;j++) for (let i=0;i<brushN;i++) {
+function brushCells(x, y, n) {   // N×N brush centered on the clicked cell (clipped to grid)
+  const N = n ?? brushN, off = Math.floor((N-1)/2), out = [];
+  for (let j=0;j<N;j++) for (let i=0;i<N;i++) {
     const bx = x-off+i, by = y-off+j;
     if (inb(bx,by)) out.push([bx,by]);
   }
@@ -338,7 +396,14 @@ function fillThings() {
 $('catSel').onchange = () => { fillThings(); tool = 'thing'; syncTools(); };
 $('thingSel').onchange = () => { tool = 'thing'; syncTools(); };
 fillThings();
-let paintSurf = 0, paintWall = 0, paintCeil = 0;
+let paintSurf = 0, paintWall = 0, paintCeil = 0, doorLock = 0;
+let stampMode = 'copy';         // 'copy' | 'paste'
+let stampBuffer = null;         // { w, h, cells: [...] } — deep-cloned cells, row-major; null = nothing copied yet
+// tools that support drag-to-paint: holding the mouse down and dragging applies the tool to
+// every newly-entered cell, batched into a single undo step. Select/Rotate/Objects/Stamp/Fill
+// stay click-only (dragging a marker in Select mode already means something else; a flood
+// fill or a whole-map stamp doesn't have a natural "per-cell" meaning to drag).
+const PAINT_TOOLS = new Set(['terrain','ceil','wall','door','exit','paint','wpaint','cpaint','erase']);
 SURFS.forEach(([label], i) => {
   if (i === TELE_IDX || i === ARRIVE_IDX) return;   // teleporters are placed as objects now
   $('surfSel').add(new Option(label, i));
@@ -352,36 +417,63 @@ $('lvlName').onchange = () => autosave();
 $('surfSel').onchange = () => { paintSurf = +$('surfSel').value; tool = 'paint'; syncTools(); };
 $('wallSel').onchange = () => { paintWall = +$('wallSel').value; tool = 'wpaint'; syncTools(); };
 $('ceilSel').onchange = () => { paintCeil = +$('ceilSel').value; tool = 'cpaint'; syncTools(); };
+$('lockSel').onchange = () => { doorLock = +$('lockSel').value; tool = 'door'; syncTools(); };
 document.querySelectorAll('.tool').forEach(b => b.onclick = () => {
   tool = b.dataset.tool;
-  if (b.dataset.dir) terraDir = b.dataset.dir;
+  if (b.dataset.dir) { if (tool === 'ceil') ceilDir = b.dataset.dir; else terraDir = b.dataset.dir; }
+  if (b.dataset.stampmode) stampMode = b.dataset.stampmode;
   syncTools();
 });
 $('stepMinus').onclick = () => { terraStep = Math.max(16, terraStep - 16); $('stepLbl').textContent = terraStep; syncTools(); };
 $('stepPlus').onclick = () => { terraStep = Math.min(128, terraStep + 16); $('stepLbl').textContent = terraStep; syncTools(); };
-$('brushSel').onchange = () => { brushN = +$('brushSel').value; syncTools(); };
+$('brushSel').onchange = () => {
+  const v = $('brushSel').value;
+  terraSub = v === 'q';
+  if (!terraSub) brushN = +v;
+  syncTools();
+};
+$('ceilStepMinus').onclick = () => { ceilStep = Math.max(16, ceilStep - 16); $('ceilStepLbl').textContent = ceilStep; syncTools(); };
+$('ceilStepPlus').onclick = () => { ceilStep = Math.min(128, ceilStep + 16); $('ceilStepLbl').textContent = ceilStep; syncTools(); };
+$('ceilBrushSel').onchange = () => {
+  const v = $('ceilBrushSel').value;
+  ceilSub = v === 'q';
+  if (!ceilSub) ceilBrushN = +v;
+  syncTools();
+};
 function syncTools() {
   document.querySelectorAll('.tool').forEach(b => b.classList.toggle('active',
-    b.dataset.tool === tool && (!b.dataset.dir || b.dataset.dir === terraDir)));
-  // each tool's options are only shown while that tool is active
-  $('optTerrain').classList.toggle('hidden', tool !== 'terrain' && tool !== 'ceil');
+    b.dataset.tool === tool &&
+    (!b.dataset.dir || b.dataset.dir === (tool === 'ceil' ? ceilDir : terraDir)) &&
+    (!b.dataset.stampmode || b.dataset.stampmode === stampMode)));
+  // each tool's options are only shown while that exact tool is active
+  $('optTerrain').classList.toggle('hidden', tool !== 'terrain');
+  $('optCeilStep').classList.toggle('hidden', tool !== 'ceil');
   $('optFloor').classList.toggle('hidden', tool !== 'paint' && tool !== 'fillfloor');
   $('optWall').classList.toggle('hidden', tool !== 'wpaint' && tool !== 'fillwall');
   $('optCeil').classList.toggle('hidden', tool !== 'cpaint' && tool !== 'fillceil');
+  $('optDoor').classList.toggle('hidden', tool !== 'door');
   $('optThing').classList.toggle('hidden', tool !== 'thing');
+  $('optStamp').classList.toggle('hidden', tool !== 'stamp');
+  $('stampInfo').textContent = stampBuffer ? stampBuffer.w + '×' + stampBuffer.h + ' cells ready to paste' : 'nothing copied yet';
   $('surfChip').style.background = SURFS[paintSurf][2];
   $('wallChip').style.background = WALLMATS[paintWall][2];
   $('ceilChip').style.background = CEILMATS[paintCeil][2];
-  $('stTool').textContent = tool === 'select' ? 'select: click an object to inspect it'
-    : tool === 'terrain' ? 'terrain: ' + terraDir + ' ' + terraStep + ' · brush ' + brushN + '×' + brushN
-    : tool === 'ceil' ? 'ceiling: ' + terraDir + ' ' + terraStep + ' · brush ' + brushN + '×' + brushN
+  $('lockChip').style.background = LOCKS[doorLock][2];
+  $('stTool').textContent = tool === 'select' ? 'select/move: click an object to inspect it, drag to move it'
+    : tool === 'terrain' ? 'terrain: ' + terraDir + ' ' + terraStep + ' · brush ' + (terraSub ? '¼×¼' : brushN + '×' + brushN)
+    : tool === 'ceil' ? 'ceiling: ' + ceilDir + ' ' + ceilStep + ' · brush ' + (ceilSub ? '¼×¼' : ceilBrushN + '×' + ceilBrushN)
     : tool === 'paint' ? 'paint floor: ' + SURFS[paintSurf][0]
     : tool === 'wpaint' ? 'paint wall: ' + WALLMATS[paintWall][0]
     : tool === 'cpaint' ? 'paint ceiling: ' + CEILMATS[paintCeil][0] + ' (no effect on Sky levels)'
+    : tool === 'door' ? 'door: ' + LOCKS[doorLock][0] + (doorLock ? ' key required' : '')
     : tool === 'fillfloor' ? 'fill floor: ' + SURFS[paintSurf][0]
     : tool === 'fillwall' ? 'fill wall: ' + WALLMATS[paintWall][0]
     : tool === 'fillceil' ? 'fill ceiling: ' + CEILMATS[paintCeil][0]
-    : tool === 'thing' ? 'place: ' + $('thingSel').selectedOptions[0].text : 'tool: ' + tool;
+    : tool === 'thing' ? 'place: ' + $('thingSel').selectedOptions[0].text
+    : tool === 'stamp' ? 'stamp: ' + stampMode + (stampMode === 'paste'
+        ? (stampBuffer ? ' — click to place the ' + stampBuffer.w + '×' + stampBuffer.h + ' stamp' : ' — copy something first')
+        : ' — drag a rectangle (or click for one cell)')
+    : 'tool: ' + tool;
 }
 $('helpClose').onclick = () => $('help').classList.add('hidden');
 $('btnHelp').onclick = () => $('help').classList.toggle('hidden');
@@ -492,6 +584,9 @@ window.addEventListener('keydown', e => {
     selCell = null; refreshInfo(); return;
   }
   if (e.target.tagName==='INPUT' || e.target.tagName==='SELECT') return;
+  if (e.key===' ' && !walk.on) {   // quick-switch to Select/Move (Space means something else in Walk)
+    tool = 'select'; syncTools(); e.preventDefault(); return;
+  }
   const pk = PAN_KEYS[e.key];
   if (pk && gl.ready && !walk.on) {           // pan the view relative to camera heading
     const s = gl.cam.dist * 0.06;
@@ -503,7 +598,7 @@ window.addEventListener('keydown', e => {
 });
 
 function ceilUnits() { return Math.round(Math.min(480, Math.max(64, +$('ceilH').value||128)) / HU); }
-function applyTool(x, y) {
+function applyTool(x, y, sxi, syi, skipCheckpoint) {
   if (!inb(x,y)) return;
   const c = grid[gi(x,y)];
   if (tool==='select') {              // selection never modifies the map
@@ -511,45 +606,81 @@ function applyTool(x, y) {
     refreshInfo();
     return;
   }
-  checkpoint();
+  if (tool==='ceil' && ceilDir==='lower' && $('sky').value) {
+    // Sky levels render an F_SKY1 ceiling at effectively infinite height (the classic
+    // "sky hack"), and two adjoining Sky sectors draw coplanar regardless of height —
+    // so a lowered ceiling has no visible cap or collar wall in-game. Only meaningful
+    // on indoor (non-sky) levels.
+    $('stMsg').textContent = '⚠ Lowering the ceiling has no effect on Sky levels — set Sky to Indoors first.';
+    return;
+  }
+  if (!skipCheckpoint) checkpoint();   // drag-to-paint checkpoints once per stroke, not per cell
   const maxH = Math.min(HMAX, ceilUnits());
   if (tool==='terrain') {
     const delta = (terraDir==='raise' ? 1 : -1) * (terraStep/HU);
-    for (const [bx,by] of brushCells(x,y)) {
-      const cc = grid[gi(bx,by)];
-      if (cc.wall || cc.door || cc.exit) continue;   // structures are left alone; use Erase first
-      cc.h = Math.max(0, Math.min(maxH, cc.h + delta));
+    if (terraSub && sxi != null && !c.wall && !c.door && !c.exit) {
+      // ¼×¼ brush: sculpt just the one quarter-cell under the cursor
+      if (!c.sh) c.sh = Array(16).fill(c.h);
+      const i = sidx(sxi,syi);
+      c.sh[i] = Math.max(0, Math.min(maxH, c.sh[i] + delta));
+      collapseSh(c);
+    } else {
+      for (const [bx,by] of brushCells(x,y)) {
+        const cc = grid[gi(bx,by)];
+        if (cc.wall || cc.door || cc.exit) continue;   // structures are left alone; use Erase first
+        if (cc.sh) { cc.sh = cc.sh.map(v => Math.max(0, Math.min(maxH, v + delta))); collapseSh(cc); }
+        else cc.h = Math.max(0, Math.min(maxH, cc.h + delta));
+      }
     }
   }
   else if (tool==='ceil') {
-    const delta = (terraDir==='lower' ? 1 : -1) * (terraStep/HU);
-    // Doors have no ceiling of their own — a door's open height always follows
-    // whatever its neighbors are. So lowering the ceiling ON a door instead lowers
-    // the door's open (non-wall) neighbor cells: that caps how high it opens and
-    // leaves ordinary wall above it, without the user needing to find/paint the
-    // corridor cell beside the door themselves.
-    const targets = new Set();
-    for (const [bx,by] of brushCells(x,y)) {
-      const cc = grid[gi(bx,by)];
-      if (cc.wall || cc.exit) continue;
-      if (cc.door) {
-        for (const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
-          const nx = bx+dx, ny = by+dy;
-          if (!inb(nx,ny)) continue;
-          const n = grid[gi(nx,ny)];
-          if (!n.wall && !n.exit && !n.door) targets.add(gi(nx,ny));
+    const delta = (ceilDir==='lower' ? 1 : -1) * (ceilStep/HU);
+    if (ceilSub && sxi != null && !c.wall && !c.exit && !c.door) {
+      // ¼×¼ brush: sculpt just the one quarter-cell's ceiling. (Doors keep the whole-cell
+      // neighbor-redirect behavior below — a door has no single "quarter" of its own.)
+      if (!c.sch) c.sch = Array(16).fill(c.ch||0);
+      const i = sidx(sxi,syi);
+      const maxDrop = Math.max(0, ceilUnits() - subFloorH(c, sxi, syi));
+      c.sch[i] = Math.max(0, Math.min(maxDrop, c.sch[i] + delta));
+      collapseSch(c);
+    } else {
+      // Doors have no ceiling of their own — a door's open height always follows
+      // whatever its neighbors are. So lowering the ceiling ON a door instead lowers
+      // the door's open (non-wall) neighbor cells: that caps how high it opens and
+      // leaves ordinary wall above it, without the user needing to find/paint the
+      // corridor cell beside the door themselves.
+      const targets = new Set();
+      for (const [bx,by] of brushCells(x,y,ceilBrushN)) {
+        const cc = grid[gi(bx,by)];
+        if (cc.wall || cc.exit) continue;
+        if (cc.door) {
+          for (const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+            const nx = bx+dx, ny = by+dy;
+            if (!inb(nx,ny)) continue;
+            const n = grid[gi(nx,ny)];
+            if (!n.wall && !n.exit && !n.door) targets.add(gi(nx,ny));
+          }
+        } else targets.add(gi(bx,by));
+      }
+      for (const idx of targets) {
+        const t = grid[idx];
+        if (t.sch) {
+          t.sch = t.sch.map((v,i2) => {
+            const sxi2 = i2%SUBN, syi2 = Math.floor(i2/SUBN);
+            const md = Math.max(0, ceilUnits() - subFloorH(t, sxi2, syi2));
+            return Math.max(0, Math.min(md, v + delta));
+          });
+          collapseSch(t);
+        } else {
+          const maxDrop = Math.max(0, ceilUnits() - t.h);   // ceiling can descend to the floor
+          t.ch = Math.max(0, Math.min(maxDrop, (t.ch||0) + delta));
         }
-      } else targets.add(gi(bx,by));
-    }
-    for (const idx of targets) {
-      const t = grid[idx];
-      const maxDrop = Math.max(0, ceilUnits() - t.h);   // ceiling can descend to the floor
-      t.ch = Math.max(0, Math.min(maxDrop, (t.ch||0) + delta));
+      }
     }
   }
   else if (tool==='erase') { Object.assign(c, newCol()); }
   else if (tool==='wall') { c.wall=true; c.door=c.exit=false; c.thing=0; }
-  else if (tool==='door') { c.door=true; c.wall=c.exit=false; c.thing=0; }
+  else if (tool==='door') { c.door=true; c.wall=c.exit=false; c.thing=0; c.lock=doorLock; }
   else if (tool==='exit') { c.exit=true; c.wall=c.door=false; c.thing=0; }
   else if (tool==='paint') { c.surf = paintSurf; }
   else if (tool==='wpaint') { c.wmat = paintWall; }
@@ -584,20 +715,24 @@ function floodFill(x0, y0, mode) {
     } else {                                                 // open area: fill its edge material
       if (start.wmat === paintWall) return;
       const w0 = start.wmat, h0 = start.h;
-      match = c => !solid(c) && !c.door && c.wmat === w0 && c.h === h0;
+      match = c => !solid(c) && !c.door && !c.sh && c.wmat === w0 && c.h === h0;
       apply = c => c.wmat = paintWall;
     }
   } else if (mode === 'ceil') {
     if (solid(start) || start.door) return;
     if (start.cmat === paintCeil) return;
     const cm0 = start.cmat, ch0 = start.ch||0;
-    match = c => !solid(c) && !c.door && c.cmat === cm0 && (c.ch||0) === ch0;
+    // quarter-sculpted cells (sch) don't have one uniform height, so they never match —
+    // fill simply stops there, same as at a wall or door.
+    match = c => !solid(c) && !c.door && !c.sch && c.cmat === cm0 && (c.ch||0) === ch0;
     apply = c => c.cmat = paintCeil;
   } else {
     if (solid(start) || start.door) return;
     if (start.surf === paintSurf) return;
     const s0 = start.surf, h0 = start.h;
-    match = c => !solid(c) && !c.door && c.surf === s0 && c.h === h0;
+    // quarter-sculpted cells (sh) don't have one uniform height, so they never match —
+    // fill simply stops there, same as at a wall or door.
+    match = c => !solid(c) && !c.door && !c.sh && c.surf === s0 && c.h === h0;
     apply = c => c.surf = paintSurf;
   }
   const seen = new Set([gi(x0,y0)]);
@@ -628,9 +763,42 @@ function smartRemove(x, y) {
   checkpoint();
   if (c.tele) { removeTeleporter(c.tele); $('stMsg').textContent = 'teleporter pair removed'; }
   else if (c.thing) c.thing = 0;
-  else if (c.wall||c.door||c.exit) c.wall=c.door=c.exit=false;
+  else if (c.wall||c.door||c.exit) { c.wall=c.door=c.exit=false; c.lock=0; }
   else if (c.surf === TELE_IDX || c.surf === ARRIVE_IDX) c.surf = 0;   // unpaired pad paint
+  else if (c.sh) { c.sh = c.sh.map(v => Math.max(0, v-1)); collapseSh(c); }
   else c.h = Math.max(0, c.h-1);
+  rebuild();
+}
+
+// ---- stamp: copy a rectangular region of cells, paste it elsewhere (even on another level —
+// the buffer is just a plain in-memory clipboard, untouched by level switching) ----
+function stampCopy(x0, y0, x1, y1) {
+  const xa = Math.max(0, Math.min(x0,x1)), xb = Math.min(W-1, Math.max(x0,x1));
+  const ya = Math.max(0, Math.min(y0,y1)), yb = Math.min(D-1, Math.max(y0,y1));
+  const w = xb-xa+1, h = yb-ya+1;
+  const cells = [];
+  for (let y=ya; y<=yb; y++) for (let x=xa; x<=xb; x++) cells.push(JSON.parse(JSON.stringify(grid[gi(x,y)])));
+  stampBuffer = { w, h, cells };
+  $('stMsg').textContent = 'copied ' + w + '×' + h + ' cell' + (w*h===1?'':'s');
+  syncTools();   // refresh the "N×M cells ready to paste" sidebar readout
+}
+function stampPaste(x0, y0) {   // x0,y0 = destination NW (min-x, min-y) corner
+  if (!stampBuffer) return;
+  checkpoint();
+  for (let j=0; j<stampBuffer.h; j++) for (let i=0; i<stampBuffer.w; i++) {
+    const dx = x0+i, dy = y0+j;
+    if (!inb(dx,dy)) continue;    // pastes overlapping the map edge are simply clipped
+    grid[gi(dx,dy)] = JSON.parse(JSON.stringify(stampBuffer.cells[j*stampBuffer.w+i]));
+  }
+  // only one Player 1 Start is allowed on a level — if the stamp carried one in, clear any
+  // others outside the pasted area (same rule the Objects tool enforces on placement).
+  if (stampBuffer.cells.some(c => c.thing === 1)) {
+    for (let y=0; y<D; y++) for (let x=0; x<W; x++) {
+      const inPasted = x>=x0 && x<x0+stampBuffer.w && y>=y0 && y<y0+stampBuffer.h;
+      if (!inPasted && grid[gi(x,y)].thing === 1) grid[gi(x,y)].thing = 0;
+    }
+  }
+  $('stMsg').textContent = 'pasted ' + stampBuffer.w + '×' + stampBuffer.h + ' cells';
   rebuild();
 }
 
@@ -638,60 +806,84 @@ function smartRemove(x, y) {
 function compile() {
   const ceil = ceilUnits() * HU;
   const sky = !!$('sky').value;
-  // per-cell sector properties (null = solid)
-  const props = new Array(W*D).fill(null);
+  // sector properties live on a sub-cell grid (SW×SD, SS units per cell) so that ¼×¼-sculpted
+  // Terrain/Ceiling heights compile into real sector boundaries. Walls/doors/textures/things
+  // never vary within a parent cell, so they're just replicated across its 16 sub-cells —
+  // for any map that never uses the ¼×¼ brush this produces byte-for-byte the same regions
+  // and boundary runs as the old per-cell algorithm, just computed at finer resolution.
+  const SW = W*SUBN, SD = D*SUBN;
+  const sgi = (sx,sy) => sy*SW + sx;
+  const props = new Array(SW*SD).fill(null);       // null = solid
   for (let y=0;y<D;y++) for (let x=0;x<W;x++) {
     const c = grid[gi(x,y)];
-    if (c.wall || c.exit) continue;
-    if (!c.door) {
-      const s = SURFS[c.surf];
-      const tp = isTp(c.thing);   // teleporter object: its cell becomes a GATE pad sector
-      const fh = Math.min(c.h*HU, ceil);
-      props[gi(x,y)] = { floorh: fh, ceilh: Math.max(fh, ceil - (c.ch||0)*HU),
-        floort: tp ? 'GATE' + (c.thing - TP_MIN + 1) : s[1],
-        ceilt: sky ? 'F_SKY1' : CEILMATS[c.cmat||0][1], light: 192, special: tp ? 0 : s[3], tag: 0, door: false };
+    if (c.wall || c.exit || c.door) continue;
+    const s = SURFS[c.surf];
+    const tp = isTp(c.thing);   // teleporter object: its cell becomes a GATE pad sector
+    const floort = tp ? 'GATE' + (c.thing - TP_MIN + 1) : s[1];
+    const ceilt = sky ? 'F_SKY1' : CEILMATS[c.cmat||0][1];
+    const special = tp ? 0 : s[3];
+    for (let syi=0; syi<SUBN; syi++) for (let sxi=0; sxi<SUBN; sxi++) {
+      const fh = Math.min(subFloorH(c,sxi,syi)*HU, ceil);
+      const sx = x*SUBN+sxi, sy = y*SUBN+syi;
+      props[sgi(sx,sy)] = { floorh: fh, ceilh: Math.max(fh, ceil - subCeilCh(c,sxi,syi)*HU),
+        floort, ceilt, light: 192, special, tag: 0, door: false };
     }
   }
-  for (let y=0;y<D;y++) for (let x=0;x<W;x++) {    // doors: floor = lowest open neighbor
+  for (let y=0;y<D;y++) for (let x=0;x<W;x++) {    // doors: floor = lowest point of any open neighbor
     const c = grid[gi(x,y)];
     if (!c.door) continue;
     let f = null;
     for (const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
-      const p = inb(x+dx,y+dy) ? props[gi(x+dx,y+dy)] : null;
-      if (p && !p.door && (f===null || p.floorh < f)) f = p.floorh;
+      const nx=x+dx, ny=y+dy;
+      if (!inb(nx,ny)) continue;
+      const n = grid[gi(nx,ny)];
+      if (n.wall || n.exit || n.door) continue;
+      for (let syi=0; syi<SUBN; syi++) for (let sxi=0; sxi<SUBN; sxi++) {
+        const fh = Math.min(subFloorH(n,sxi,syi)*HU, ceil);
+        if (f===null || fh < f) f = fh;
+      }
     }
     if (f===null) f = Math.min(c.h*HU, ceil);
-    props[gi(x,y)] = { floorh:f, ceilh:f, floort:'FLAT1', ceilt:'FLAT1', light:192, special:0, tag:0, door:true };
+    for (let syi=0; syi<SUBN; syi++) for (let sxi=0; sxi<SUBN; sxi++) {
+      const sx = x*SUBN+sxi, sy = y*SUBN+syi;
+      props[sgi(sx,sy)] = { floorh:f, ceilh:f, floort:'FLAT1', ceilt:'FLAT1', light:192, special:0, tag:0,
+        door:true, lock: c.lock||0 };
+    }
   }
-  // flood-fill identical cells into regions (this is the sector merging)
-  const reg = new Array(W*D).fill(-1);            // -1 solid, -2 exit, >=0 region
+  // flood-fill identical sub-cells into regions (this is the sector merging)
+  const reg = new Array(SW*SD).fill(-1);            // -1 solid, -2 exit, >=0 region
   for (let y=0;y<D;y++) for (let x=0;x<W;x++)
-    if (grid[gi(x,y)].exit) reg[gi(x,y)] = -2;
+    if (grid[gi(x,y)].exit) for (let syi=0;syi<SUBN;syi++) for (let sxi=0;sxi<SUBN;sxi++)
+      reg[sgi(x*SUBN+sxi, y*SUBN+syi)] = -2;
   const key = i => props[i] ? JSON.stringify(props[i]) : null;
   const sectors = [];
-  for (let y=0;y<D;y++) for (let x=0;x<W;x++) {
-    const i = gi(x,y);
+  for (let sy=0; sy<SD; sy++) for (let sx=0; sx<SW; sx++) {
+    const i = sgi(sx,sy);
     if (!props[i] || reg[i] >= 0) continue;
     const id = sectors.length, k = key(i);
     sectors.push({ ...props[i] });
-    const q = [[x,y]]; reg[i] = id;
+    const q = [[sx,sy]]; reg[i] = id;
     while (q.length) {
       const [qx,qy] = q.pop();
       for (const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
         const nx=qx+dx, ny=qy+dy;
-        if (!inb(nx,ny)) continue;
-        const ni = gi(nx,ny);
+        if (nx<0||nx>=SW||ny<0||ny>=SD) continue;
+        const ni = sgi(nx,ny);
         if (reg[ni] === -1 && props[ni] && key(ni) === k) { reg[ni] = id; q.push([nx,ny]); }
       }
     }
   }
   const isDoor = r => r>=0 && sectors[r].door;
+  const doorLockOf = r => (r>=0 && sectors[r].door) ? (sectors[r].lock||0) : 0;
   // border segments -> linedefs (merge collinear runs with same left/right regions)
   const m = { vertices:[], linedefs:[], sidedefs:[], sectors: sectors.map(s => {
-      const { door, ...rest } = s; return rest; }), things:[] };
+      const { door, lock, ...rest } = s; return rest; }), things:[] };
   // teleporters: GATE1 pad regions send the player to the nearest Teleport Landing (thing 14)
   const isPad = r => r>=0 && !sectors[r].door && /^GATE[1-4]$/.test(sectors[r].floort);
   const padTarget = {};
+  // teleporters/things are still whole-cell — look up a parent cell's region via one
+  // representative (center) sub-cell; unsculpted cells are uniform across all 16 anyway.
+  const regOf = (x,y) => (inb(x,y)) ? reg[sgi(x*SUBN + (SUBN>>1), y*SUBN + (SUBN>>1))] : -1;
   {
     const endpoints = [], landings = [], secTag = {};
     let nextTag = 1;
@@ -701,14 +893,14 @@ function compile() {
     };
     for (let y=0;y<D;y++) for (let x=0;x<W;x++) {
       const c = grid[gi(x,y)];
-      const r = reg[gi(x,y)];
+      const r = regOf(x,y);
       if (r < 0) continue;
       if (isTp(c.thing)) { endpoints.push({ r, color: c.thing, x: x+0.5, y: y+0.5 }); tagOf(r); }
       else if (c.thing === 14) { landings.push({ x: x+0.5, y: y+0.5, sec: r }); tagOf(r); }
     }
     const cent = {};
     for (let y=0;y<D;y++) for (let x=0;x<W;x++) {
-      const r = reg[gi(x,y)];
+      const r = regOf(x,y);
       if (!isPad(r)) continue;
       cent[r] = cent[r] || { sx:0, sy:0, n:0 };
       cent[r].sx += x+0.5; cent[r].sy += y+0.5; cent[r].n++;
@@ -743,18 +935,20 @@ function compile() {
     if (!vmap.has(k)) { vmap.set(k, m.vertices.length); m.vertices.push({x, y}); }
     return vmap.get(k);
   };
-  const R = (x,y) => inb(x,y) ? reg[gi(x,y)] : -1;
-  // which wall texture an edge between two cells should use:
-  // solid side wins (you painted that wall block); between open cells the taller floor wins
+  const R = (sx,sy) => (sx>=0 && sx<SW && sy>=0 && sy<SD) ? reg[sgi(sx,sy)] : -1;
+  // which wall texture an edge between two sub-cells should use: solid side wins (you painted
+  // that wall block, looked up on its whole parent cell — walls aren't sub-resolved); between
+  // open sub-cells the taller floor wins
   const solidCell = (x,y) => !inb(x,y) || grid[gi(x,y)].wall || grid[gi(x,y)].exit;
   const wm = (x,y) => WALLMATS[grid[gi(x,y)].wmat||0][1];
   const borderTex = (WALLMATS[+$('borderSel').value] || WALLMATS[0])[1];
-  function edgeTex(xa,ya, xb,yb) {
+  function edgeTex(sxa,sya, sxb,syb) {
+    const xa = Math.floor(sxa/SUBN), ya = Math.floor(sya/SUBN), xb = Math.floor(sxb/SUBN), yb = Math.floor(syb/SUBN);
     const as = solidCell(xa,ya), bs = solidCell(xb,yb);
     if (as && bs) return WALLTEX;
     if (as) return inb(xa,ya) ? wm(xa,ya) : borderTex;
     if (bs) return inb(xb,yb) ? wm(xb,yb) : borderTex;
-    const pa = props[gi(xa,ya)], pb = props[gi(xb,yb)];
+    const pa = props[sgi(sxa,sya)], pb = props[sgi(sxb,syb)];
     return (pa && pb && pa.floorh < pb.floorh) ? wm(xb,yb) : wm(xa,ya);
   }
   function emit(x1,y1, x2,y2, front, back, solidType, tex) {
@@ -775,7 +969,7 @@ function compile() {
           [front, back] = [back, front];
           [x1, y1, x2, y2] = [x2, y2, x1, y1];
         }
-        special = 1;
+        special = LOCKS[doorLockOf(back)][3];   // back is always the door sector past this point
       } else if (tele) {
         if (isPad(front)) {
           // WR teleports trigger when crossed from the FRONT — face lines away from the pad
@@ -784,45 +978,52 @@ function compile() {
         }
         if (padTarget[back]) { special = 97; tag = padTarget[back]; }
       }
-      m.sidedefs.push({ xoff:0, yoff:0, upper: door?DOORTEX:tex, lower:tex, middle:'-', sector: front });
+      // a locked door's entire face uses the matching colored door skin (DOORBLU/DOORYEL/
+      // DOORRED) instead of the traditional BIGDOOR2 — the same single crossing-line
+      // mechanism as an ordinary door, just a different texture name, so it's guaranteed to
+      // render exactly as reliably as any plain door does.
+      const doorTex = door ? LOCKS[doorLockOf(back)][1] : null;
+      m.sidedefs.push({ xoff:0, yoff:0, upper: doorTex||tex, lower:tex, middle:'-', sector: front });
       const f = m.sidedefs.length-1;
-      m.sidedefs.push({ xoff:0, yoff:0, upper: door?DOORTEX:tex, lower:tex, middle:'-', sector: back });
+      m.sidedefs.push({ xoff:0, yoff:0, upper: doorTex||tex, lower:tex, middle:'-', sector: back });
       m.linedefs.push({ v1:V(x1,y1), v2:V(x2,y2), flags:4, special, tag, front:f, back:m.sidedefs.length-1 });
     }
   }
-  // vertical boundaries (between column x-1 and x)
-  for (let x=0;x<=W;x++) {
+  // vertical boundaries (between sub-column sx-1 and sx) — same run-merging as before, just
+  // walked at SS-unit resolution; long collinear runs still collapse into one linedef each,
+  // so an unsculpted map produces identical output to the old per-cell version.
+  for (let sx=0; sx<=SW; sx++) {
     let run = null;
-    for (let y=0;y<=D;y++) {
-      const L = y<D ? R(x-1,y) : -9, Rr = y<D ? R(x,y) : -9;
+    for (let sy=0; sy<=SD; sy++) {
+      const L = sy<SD ? R(sx-1,sy) : -9, Rr = sy<SD ? R(sx,sy) : -9;
       let pair = (L===Rr || (L<0 && Rr<0)) ? null : L+'|'+Rr;
-      const tex = pair ? edgeTex(x-1,y, x,y) : '';
+      const tex = pair ? edgeTex(sx-1,sy, sx,sy) : '';
       if (pair) pair += '|'+tex;
       if (run && run.pair !== pair) { flushV(run); run = null; }
-      if (pair && !run) run = { pair, L, R:Rr, tex, y0:y, y1:y };
-      else if (run) run.y1 = y;
+      if (pair && !run) run = { pair, L, R:Rr, tex, y0:sy, y1:sy };
+      else if (run) run.y1 = sy;
     }
     function flushV(r) {
-      const X = x*CS, ya = r.y0*CS, yb = (r.y1+1)*CS;
+      const X = sx*SS, ya = r.y0*SS, yb = (r.y1+1)*SS;
       if (r.L < 0) emit(X, ya, X, yb, r.R, null, r.L, r.tex);        // northward, open east
       else if (r.R < 0) emit(X, yb, X, ya, r.L, null, r.R, r.tex);   // southward, open west
       else emit(X, yb, X, ya, r.L, r.R, 0, r.tex);                   // front = west
     }
   }
-  // horizontal boundaries (between row y-1 and y)
-  for (let y=0;y<=D;y++) {
+  // horizontal boundaries (between sub-row sy-1 and sy)
+  for (let sy=0; sy<=SD; sy++) {
     let run = null;
-    for (let x=0;x<=W;x++) {
-      const S = x<W ? R(x,y-1) : -9, N = x<W ? R(x,y) : -9;
+    for (let sx=0; sx<=SW; sx++) {
+      const S = sx<SW ? R(sx,sy-1) : -9, N = sx<SW ? R(sx,sy) : -9;
       let pair = (S===N || (S<0 && N<0)) ? null : S+'|'+N;
-      const tex = pair ? edgeTex(x,y-1, x,y) : '';
+      const tex = pair ? edgeTex(sx,sy-1, sx,sy) : '';
       if (pair) pair += '|'+tex;
       if (run && run.pair !== pair) { flushH(run); run = null; }
-      if (pair && !run) run = { pair, S, N, tex, x0:x, x1:x };
-      else if (run) run.x1 = x;
+      if (pair && !run) run = { pair, S, N, tex, x0:sx, x1:sx };
+      else if (run) run.x1 = sx;
     }
     function flushH(r) {
-      const Y = y*CS, xa = r.x0*CS, xb = (r.x1+1)*CS;
+      const Y = sy*SS, xa = r.x0*SS, xb = (r.x1+1)*SS;
       if (r.S < 0) emit(xb, Y, xa, Y, r.N, null, r.S, r.tex);        // westward, open north
       else if (r.N < 0) emit(xa, Y, xb, Y, r.S, null, r.N, r.tex);   // eastward, open south
       else emit(xa, Y, xb, Y, r.S, r.N, 0, r.tex);                   // front = south
@@ -926,7 +1127,10 @@ $('btnExport').onclick = () => {
     for (let yy=0; yy<D; yy++) for (let xx=0; xx<W; xx++) {
       const cc = grid[gi(xx,yy)];
       if (cc.wall || cc.exit || cc.door || !cc.thing) continue;
-      if (cu - Math.min(cc.h*HU, cu) < 56) { cramped++; if (cc.thing === 1) crampedStart = true; }
+      // ¼×¼-sculpted: a thing could effectively sit over any quarter of its cell, so use
+      // the tallest (worst-case, least headroom) quarter for this check.
+      const worstFloor = cc.sh ? Math.max(...cc.sh) : cc.h;
+      if (cu - Math.min(worstFloor*HU, cu) < 56) { cramped++; if (cc.thing === 1) crampedStart = true; }
     }
     if (crampedStart) problems.push(slot + ': Player 1 Start has under 56 units of headroom — the player will be stuck');
     else if (cramped) problems.push(slot + ': ' + cramped + ' thing(s) on cells with under 56 units of headroom (red-tinted in the editor)');
@@ -1309,6 +1513,20 @@ function rebuild() {
   };
   const shade = (hex, f) => '#' + [1,3,5].map(i =>
     Math.round(parseInt(hex.slice(i,i+2),16)*f).toString(16).padStart(2,'0')).join('');
+  // floor height at a specific quarter-cell, honoring ¼×¼ sculpting (c.sh) — solid cells
+  // (wall/exit/door) are always ceil-height regardless of quarter, matching how the rest of
+  // this file treats them. sxi/syi outside 0..SUBN-1 are normalized into the neighboring
+  // cell, so this also transparently answers "what's just across this cell's edge."
+  function topAtSub(x, y, sxi, syi) {
+    while (sxi < 0) { sxi += SUBN; x--; }
+    while (sxi >= SUBN) { sxi -= SUBN; x++; }
+    while (syi < 0) { syi += SUBN; y--; }
+    while (syi >= SUBN) { syi -= SUBN; y++; }
+    if (!inb(x,y)) return 0;
+    const cc = grid[gi(x,y)];
+    if (cc.wall||cc.exit||cc.door) return ceil;
+    return Math.min(subFloorH(cc, sxi, syi)*HU, ceil);
+  }
   for (let y=0;y<D;y++) for (let x=0;x<W;x++) {
     const c = grid[gi(x,y)];
     if (walk.on && c.door) {          // doors are animated meshes in walk mode
@@ -1320,7 +1538,7 @@ function rebuild() {
     let topKey, sideKey;
     if (c.wall)      { const wm = WALLMATS[c.wmat||0]; topKey = sideKey = 'W|'+wm[1]+'|'+wm[2]; }
     else if (c.exit) { topKey = sideKey = 'W|SW1COMP|#3fae5a'; }
-    else if (c.door) { topKey = sideKey = 'W|BIGDOOR2|#c9a13b'; }
+    else if (c.door) { const lk = LOCKS[c.lock||0]; topKey = sideKey = 'W|'+lk[1]+'|'+lk[2]; }   // locked doors show the full colored door skin
     else {
       const flat = isTp(c.thing) ? 'GATE' + (c.thing - TP_MIN + 1) : SURFS[c.surf][1];
       const fcol = isTp(c.thing) ? '#8f7fd4' : SURFS[c.surf][2];
@@ -1329,13 +1547,58 @@ function rebuild() {
       sideKey = 'W|'+wm[1]+'|'+shade(wm[2], 0.62);
     }
     const X0=x*CS, X1=(x+1)*CS, Y0=y*CS, Y1=(y+1)*CS;
-    quadY(topKey, X0, Y0, X1, Y1, top + (isStruct?0:0.01));
+    if (!isStruct && c.sh) {
+      // ¼×¼-sculpted floor: 16 quarter-cell quads instead of one whole-cell quad
+      for (let syi=0; syi<SUBN; syi++) for (let sxi=0; sxi<SUBN; sxi++) {
+        const subTop = Math.min(subFloorH(c,sxi,syi)*HU, ceil);
+        quadY(topKey, X0+sxi*SS, Y0+syi*SS, X0+(sxi+1)*SS, Y0+(syi+1)*SS, subTop + 0.01);
+      }
+    } else {
+      quadY(topKey, X0, Y0, X1, Y1, top + (isStruct?0:0.01));
+    }
     // side faces where this column is taller than neighbor
-    const nb = [[1,0,X1,Y0,X1,Y1],[ -1,0,X0,Y1,X0,Y0],[0,1,X1,Y1,X0,Y1],[0,-1,X0,Y0,X1,Y0]];
-    for (const [dx,dy,ax,ay,bx,by] of nb) {
-      const n = inb(x+dx,y+dy) ? grid[gi(x+dx,y+dy)] : null;
-      const nTop = n ? (n.wall||n.exit||n.door ? ceil : Math.min(n.h*HU, ceil)) : 0;
-      if (top > nTop) quadV(sideKey, ax, ay, bx, by, nTop, top);
+    if (!isStruct && c.sh) {
+      // ¼×¼-sculpted floor: walk every quarter-cell's 4 sub-neighbors individually. This
+      // covers BOTH internal seams within this same cell (e.g. a checkerboard sculpt) and
+      // seams against an adjacent cell — topAtSub transparently crosses cell edges. Only
+      // ever draws from the taller side (same rule as the whole-cell path below), so
+      // intra-cell seams never get drawn twice.
+      for (let syi=0; syi<SUBN; syi++) for (let sxi=0; sxi<SUBN; sxi++) {
+        const hereTop = topAtSub(x, y, sxi, syi);
+        const sdirs = [
+          [1,0,  X0+(sxi+1)*SS, Y0+syi*SS,     X0+(sxi+1)*SS, Y0+(syi+1)*SS],
+          [-1,0, X0+sxi*SS,     Y0+(syi+1)*SS, X0+sxi*SS,     Y0+syi*SS],
+          [0,1,  X0+(sxi+1)*SS, Y0+(syi+1)*SS, X0+sxi*SS,     Y0+(syi+1)*SS],
+          [0,-1, X0+sxi*SS,     Y0+syi*SS,     X0+(sxi+1)*SS, Y0+syi*SS],
+        ];
+        for (const [dsx,dsy,ax,ay,bx,by] of sdirs) {
+          const nTop = topAtSub(x, y, sxi+dsx, syi+dsy);
+          if (hereTop > nTop) quadV(sideKey, ax, ay, bx, by, nTop, hereTop);
+        }
+      }
+    } else {
+      const nb = [[1,0,X1,Y0,X1,Y1],[ -1,0,X0,Y1,X0,Y0],[0,1,X1,Y1,X0,Y1],[0,-1,X0,Y0,X1,Y0]];
+      for (const [dx,dy,ax,ay,bx,by] of nb) {
+        const n = inb(x+dx,y+dy) ? grid[gi(x+dx,y+dy)] : null;
+        const nSub = n && !(n.wall||n.exit||n.door) && !!n.sh;
+        if (nSub) {
+          // the sculpted neighbor draws its own taller-side faces when the outer loop
+          // visits it; this (plain) cell only needs to draw where IT is taller, checked
+          // per quarter along the shared edge — mirrors the sculpted cell's own scan above.
+          for (let k=0; k<SUBN; k++) {
+            let nsxi, nsyi, pax, pay, pbx, pby;
+            if (dx === 1)       { nsxi=0; nsyi=k; pax=X1; pay=Y0+k*SS; pbx=X1; pby=Y0+(k+1)*SS; }
+            else if (dx === -1) { nsxi=SUBN-1; nsyi=SUBN-1-k; pax=X0; pay=Y1-k*SS; pbx=X0; pby=Y1-(k+1)*SS; }
+            else if (dy === 1)  { nsxi=SUBN-1-k; nsyi=0; pax=X1-k*SS; pay=Y1; pbx=X1-(k+1)*SS; pby=Y1; }
+            else                { nsxi=k; nsyi=SUBN-1; pax=X0+k*SS; pay=Y0; pbx=X0+(k+1)*SS; pby=Y0; }
+            const nTop = topAtSub(x+dx, y+dy, nsxi, nsyi);
+            if (top > nTop) quadV(sideKey, pax, pay, pbx, pby, nTop, top);
+          }
+        } else {
+          const nTop = n ? (n.wall||n.exit||n.door ? ceil : Math.min(n.h*HU, ceil)) : 0;
+          if (top > nTop) quadV(sideKey, ax, ay, bx, by, nTop, top);
+        }
+      }
     }
   }
   if (walk.on) {                     // walk mode: border walls + ceilings (orbit view omits them)
@@ -1353,26 +1616,85 @@ function rebuild() {
     {
       const noSky = !$('sky').value;
       const ceilAt = c => c.door ? ceil : ceil - (c.ch||0)*HU;   // doors ignore ch — see Ceiling tool
+      // ceiling height at a specific quarter-cell, honoring ¼×¼ sculpting (c.sch) — sxi/syi
+      // outside 0..SUBN-1 are normalized into the neighboring cell, same as topAtSub.
+      function ceilAtSub(x, y, sxi, syi) {
+        while (sxi < 0) { sxi += SUBN; x--; }
+        while (sxi >= SUBN) { sxi -= SUBN; x++; }
+        while (syi < 0) { syi += SUBN; y--; }
+        while (syi >= SUBN) { syi -= SUBN; y++; }
+        if (!inb(x,y)) return ceil;
+        const cc = grid[gi(x,y)];
+        if (cc.wall||cc.exit||cc.door) return ceil;
+        return ceil - subCeilCh(cc, sxi, syi)*HU;
+      }
       for (let y=0;y<D;y++) for (let x=0;x<W;x++) {
         const c = grid[gi(x,y)];
         if (c.wall || c.exit) continue;
         const cTop = ceilAt(c);
+        const X0=x*CS, X1=(x+1)*CS, Y0=y*CS, Y1=(y+1)*CS;
         // Sky levels never show a solid ceiling flat (the real engine draws sky there
         // instead, regardless of height) — but a lowered cell still borders a genuine
         // wall below its neighbor's real ceiling, so that step still renders either way.
         if (noSky) {
-          const cm = CEILMATS[c.cmat||0];
-          quadYD('F|'+cm[1]+'|'+cm[2], x*CS, y*CS, (x+1)*CS, (y+1)*CS, cTop);
+          if (!c.door && c.sch) {
+            for (let syi=0; syi<SUBN; syi++) for (let sxi=0; sxi<SUBN; sxi++) {
+              const cm = CEILMATS[c.cmat||0];
+              quadYD('F|'+cm[1]+'|'+cm[2], X0+sxi*SS, Y0+syi*SS, X0+(sxi+1)*SS, Y0+(syi+1)*SS, ceilAtSub(x,y,sxi,syi));
+            }
+          } else {
+            const cm = CEILMATS[c.cmat||0];
+            quadYD('F|'+cm[1]+'|'+cm[2], X0, Y0, X1, Y1, cTop);
+          }
         }
-        if (c.ch && !c.door) {   // step down to a lowered ceiling: show the wall face for the gap
+        if ((c.ch || c.sch) && !c.door) {   // step down to a lowered ceiling: show the wall face for the gap
           const wm = WALLMATS[c.wmat||0], wallKey = 'W|'+wm[1]+'|'+wm[2];
-          const X0=x*CS, X1=(x+1)*CS, Y0=y*CS, Y1=(y+1)*CS;
-          const nbc = [[1,0,X1,Y0,X1,Y1],[-1,0,X0,Y1,X0,Y0],[0,1,X1,Y1,X0,Y1],[0,-1,X0,Y0,X1,Y0]];
-          for (const [dx,dy,ax,ay,bx,by] of nbc) {
-            const n = inb(x+dx,y+dy) ? grid[gi(x+dx,y+dy)] : null;
-            if (!n || n.wall || n.exit || n.door) continue;   // door's own frame covers that side
-            const nTop = ceilAt(n);
-            if (nTop > cTop) quadV(wallKey, ax, ay, bx, by, cTop, nTop);
+          if (c.sch) {
+            // ¼×¼-sculpted ceiling: walk every quarter-cell's 4 sub-neighbors — covers both
+            // internal seams within this same cell and seams against an adjacent OPEN cell
+            // (no collar against a wall/door/map-edge neighbor, matching the plain rule below).
+            for (let syi=0; syi<SUBN; syi++) for (let sxi=0; sxi<SUBN; sxi++) {
+              const hereCeil = ceilAtSub(x, y, sxi, syi);
+              const sdirs = [
+                [1,0,  X0+(sxi+1)*SS, Y0+syi*SS,     X0+(sxi+1)*SS, Y0+(syi+1)*SS],
+                [-1,0, X0+sxi*SS,     Y0+(syi+1)*SS, X0+sxi*SS,     Y0+syi*SS],
+                [0,1,  X0+(sxi+1)*SS, Y0+(syi+1)*SS, X0+sxi*SS,     Y0+(syi+1)*SS],
+                [0,-1, X0+sxi*SS,     Y0+syi*SS,     X0+(sxi+1)*SS, Y0+syi*SS],
+              ];
+              for (const [dsx,dsy,ax,ay,bx,by] of sdirs) {
+                const crossesX = sxi+dsx < 0 || sxi+dsx >= SUBN, crossesY = syi+dsy < 0 || syi+dsy >= SUBN;
+                if (crossesX || crossesY) {
+                  const nx = x + (crossesX ? dsx : 0), ny = y + (crossesY ? dsy : 0);
+                  const n = inb(nx,ny) ? grid[gi(nx,ny)] : null;
+                  if (!n || n.wall || n.exit || n.door) continue;   // door's own frame covers that side
+                }
+                const nCeil = ceilAtSub(x, y, sxi+dsx, syi+dsy);
+                if (nCeil > hereCeil) quadV(wallKey, ax, ay, bx, by, hereCeil, nCeil);
+              }
+            }
+          } else {
+            const nbc = [[1,0,X1,Y0,X1,Y1],[-1,0,X0,Y1,X0,Y0],[0,1,X1,Y1,X0,Y1],[0,-1,X0,Y0,X1,Y0]];
+            for (const [dx,dy,ax,ay,bx,by] of nbc) {
+              const n = inb(x+dx,y+dy) ? grid[gi(x+dx,y+dy)] : null;
+              if (!n || n.wall || n.exit || n.door) continue;   // door's own frame covers that side
+              if (n.sch) {
+                // sculpted neighbor: check each quarter along the shared edge — segments
+                // where the neighbor is still higher than "here" need HERE's own collar
+                // (segments where the neighbor is lower are drawn by ITS OWN scan above).
+                for (let k=0; k<SUBN; k++) {
+                  let nsxi, nsyi, pax, pay, pbx, pby;
+                  if (dx === 1)       { nsxi=0; nsyi=k; pax=X1; pay=Y0+k*SS; pbx=X1; pby=Y0+(k+1)*SS; }
+                  else if (dx === -1) { nsxi=SUBN-1; nsyi=SUBN-1-k; pax=X0; pay=Y1-k*SS; pbx=X0; pby=Y1-(k+1)*SS; }
+                  else if (dy === 1)  { nsxi=SUBN-1-k; nsyi=0; pax=X1-k*SS; pay=Y1; pbx=X1-(k+1)*SS; pby=Y1; }
+                  else                { nsxi=k; nsyi=SUBN-1; pax=X0+k*SS; pay=Y0; pbx=X0+(k+1)*SS; pby=Y0; }
+                  const nCeil = ceilAtSub(x+dx, y+dy, nsxi, nsyi);
+                  if (nCeil > cTop) quadV(wallKey, pax, pay, pbx, pby, cTop, nCeil);
+                }
+              } else {
+                const nTop = ceilAt(n);
+                if (nTop > cTop) quadV(wallKey, ax, ay, bx, by, cTop, nTop);
+              }
+            }
           }
         }
       }
@@ -1388,18 +1710,19 @@ function rebuild() {
     gl.world.add(new THREE.Mesh(g, b.info.mat));
   }
   gl.scene.add(gl.world);
-  // dynamic door slabs (walk mode only)
+  // dynamic door slabs (walk mode only) — a locked door's whole face uses its colored skin.
   if (gl.doorGroup) {
     gl.scene.remove(gl.doorGroup);
-    gl.doorGroup.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+    gl.doorGroup.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
     gl.doorGroup = null;
   }
   if (walk.on) {
     gl.doorGroup = new THREE.Group();
-    const dmat = matInfo('W|BIGDOOR2|#c9a13b').mat;
     for (let y=0;y<D;y++) for (let x=0;x<W;x++) {
-      if (!grid[gi(x,y)].door) continue;
-      const mesh = new THREE.Mesh(new THREE.BoxGeometry(CS, ceil, CS), dmat);
+      const dc = grid[gi(x,y)];
+      if (!dc.door) continue;
+      const dlk = LOCKS[dc.lock||0];
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(CS, ceil, CS), matInfo('W|'+dlk[1]+'|'+dlk[2]).mat);
       mesh.position.set(x*CS+CS/2, ceil/2, -(y*CS+CS/2));
       mesh.userData.doorKey = x+','+y;
       walk.doors[x+','+y] = walk.doors[x+','+y] || { frac:0, state:'closed', hold:0 };
@@ -1413,6 +1736,17 @@ function rebuild() {
   for (let y=0;y<D;y++) for (let x=0;x<W;x++) {
     const c = grid[gi(x,y)];
     if (c.wall || c.exit || c.door) continue;
+    if (c.sh || c.sch) {
+      // ¼×¼-sculpted: check headroom per quarter-cell, tinting only the cramped quarters
+      for (let syi=0; syi<SUBN; syi++) for (let sxi=0; sxi<SUBN; sxi++) {
+        const subTop = Math.min(subFloorH(c,sxi,syi)*HU, ceil);
+        const subCeil = ceil - subCeilCh(c,sxi,syi)*HU;
+        if (subCeil - subTop >= 56) continue;
+        const X0=x*CS+sxi*SS, X1=X0+SS, Z0=-(y*CS+syi*SS), Z1=-(y*CS+(syi+1)*SS), Y=subTop+0.6;
+        wpos.push(X0,Y,Z0, X1,Y,Z0, X1,Y,Z1,  X0,Y,Z0, X1,Y,Z1, X0,Y,Z1);
+      }
+      continue;
+    }
     const top = Math.min(c.h*HU, ceil);
     if ((ceil - (c.ch||0)*HU) - top >= 56) continue;   // a lowered ceiling can also cramp headroom
     const X0=x*CS, X1=(x+1)*CS, Z0=-(y*CS), Z1=-((y+1)*CS), Y=top+0.6;
@@ -1435,13 +1769,18 @@ function rebuild() {
     gl.ceilDrop.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
   }
   gl.ceilDrop = new THREE.Group();
-  const ceilAt2 = c => c.door ? ceil : ceil - (c.ch||0)*HU;
+  // Orbit mode's ceiling-drop preview is already an approximation (a translucent stand-in for
+  // the real thing, which only Walk mode renders exactly) — for a ¼×¼-sculpted ceiling, this
+  // preview just shows the most-dropped quarter's height for the whole cell, so it never
+  // undersells how low the ceiling gets anywhere in that cell. Switch to Walk for the real,
+  // per-quarter shape.
+  const ceilAt2 = c => c.door ? ceil : c.sch ? ceil - Math.max(...c.sch)*HU : ceil - (c.ch||0)*HU;
   const skyOn = !!$('sky').value;
   if (skyOn) {
     const cdPos = [];
     for (let y=0;y<D;y++) for (let x=0;x<W;x++) {
       const c = grid[gi(x,y)];
-      if (c.wall || c.exit || c.door || !c.ch) continue;
+      if (c.wall || c.exit || c.door || (!c.ch && !c.sch)) continue;
       const cTop = ceilAt2(c);
       const X0=x*CS, X1=(x+1)*CS, Y0=y*CS, Y1=(y+1)*CS;
       cdPos.push(X0,cTop,-Y0, X1,cTop,-Y0, X1,cTop,-Y1,  X0,cTop,-Y0, X1,cTop,-Y1, X0,cTop,-Y1);
@@ -1473,7 +1812,7 @@ function rebuild() {
     };
     for (let y=0;y<D;y++) for (let x=0;x<W;x++) {
       const c = grid[gi(x,y)];
-      if (c.wall || c.exit || c.door || !c.ch) continue;
+      if (c.wall || c.exit || c.door || (!c.ch && !c.sch)) continue;
       const cTop = ceilAt2(c);
       const X0=x*CS, X1=(x+1)*CS, Y0=y*CS, Y1=(y+1)*CS;
       const cm = CEILMATS[c.cmat||0], capB = cdB('F|'+cm[1]+'|'+cm[2]);
@@ -1507,6 +1846,45 @@ function rebuild() {
   }
   gl.scene.add(gl.ceilDrop);
   gl.ceilDrop.visible = !walk.on;
+  // border-wall preview: orbit mode never draws the outer boundary (walk mode adds it as
+  // real solid geometry above, folded into gl.world), so looking down from orbit gives no
+  // cue at all for where the map's edge actually is. Show a translucent ring using the
+  // real border texture so the boundary reads clearly without blocking the overhead view.
+  if (gl.borderPreview) {
+    gl.scene.remove(gl.borderPreview);
+    gl.borderPreview.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+  }
+  gl.borderPreview = new THREE.Group();
+  {
+    const bwm = WALLMATS[Math.min(+$('borderSel').value||0, BASE_WALLS-1)];
+    const bInfo = matInfo('W|'+bwm[1]+'|'+bwm[2]);
+    const bw = bInfo.w, bh = bInfo.h;
+    const bpPos = [], bpUV = [];
+    const WCS = W*CS, DCS = D*CS;
+    const vT = 1, vB = 1 - ceil/bh;
+    const seg = (ax, ay, bx, by) => {
+      const uA = (ax === bx ? ay : ax)/bw, uB = (ax === bx ? by : bx)/bw;
+      bpPos.push(ax,0,-ay, bx,0,-by, bx,ceil,-by,  ax,0,-ay, bx,ceil,-by, ax,ceil,-ay);
+      bpUV.push(uA,vB, uB,vB, uB,vT,  uA,vB, uB,vT, uA,vT);
+    };
+    for (let x=0;x<W;x++) {
+      seg((x+1)*CS, 0, x*CS, 0);          // south edge, faces into the map
+      seg(x*CS, DCS, (x+1)*CS, DCS);      // north edge
+    }
+    for (let y=0;y<D;y++) {
+      seg(0, y*CS, 0, (y+1)*CS);          // west edge
+      seg(WCS, (y+1)*CS, WCS, y*CS);      // east edge
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(bpPos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(bpUV, 2));
+    const mat = bInfo.mat.map
+      ? new THREE.MeshBasicMaterial({ map: bInfo.mat.map, transparent:true, opacity:0.45, depthWrite:false, side:THREE.DoubleSide })
+      : new THREE.MeshBasicMaterial({ color: bInfo.mat.color, transparent:true, opacity:0.45, depthWrite:false, side:THREE.DoubleSide });
+    gl.borderPreview.add(new THREE.Mesh(g, mat));
+  }
+  gl.scene.add(gl.borderPreview);
+  gl.borderPreview.visible = !walk.on;
   if (gl.gridLines) gl.gridLines.visible = !walk.on;
   // things
   gl.thingGroup = new THREE.Group();
@@ -1719,6 +2097,35 @@ $('tiClose').onclick = () => { selCell = null; refreshInfo(); };
 // mouse: click=apply, right-click=remove, drag=orbit, shift/middle-drag=pan
 function bindMouse(cv) {
   let down = null;
+  // shows the active tool's footprint (brush / sub-cell / stamp preview) at a hovered cell —
+  // shared by plain hovering and by a live drag-to-paint or stamp-copy stroke
+  function showToolGhost(atCell) {
+    if (!atCell) { gl.ghost.visible = false; return; }
+    gl.ghost.visible = true;
+    const c = grid[gi(atCell.x,atCell.y)];
+    if (tool === 'stamp') {
+      if (stampMode === 'paste' && stampBuffer) {
+        const ox = atCell.x - Math.floor((stampBuffer.w-1)/2), oy = atCell.y - Math.floor((stampBuffer.h-1)/2);
+        gl.ghost.scale.set(stampBuffer.w, 1, stampBuffer.h);
+        gl.ghost.position.set((ox + stampBuffer.w/2)*CS, colTop(c, ceilUnits()*HU)+4, -((oy + stampBuffer.h/2)*CS));
+      } else {
+        gl.ghost.scale.set(1, 1, 1);
+        gl.ghost.position.set(atCell.x*CS+CS/2, colTop(c, ceilUnits()*HU)+4, -(atCell.y*CS+CS/2));
+      }
+      return;
+    }
+    const sub = tool === 'terrain' ? terraSub : tool === 'ceil' ? ceilSub : false;
+    if (sub) {                        // ¼×¼ brush: show just the hovered quarter-cell
+      gl.ghost.scale.set(SS/CS, 1, SS/CS);
+      const wx = atCell.x*CS + atCell.sxi*SS + SS/2, wy = atCell.y*CS + atCell.syi*SS + SS/2;
+      gl.ghost.position.set(wx, colTop(c, ceilUnits()*HU)+4, -wy);
+    } else {
+      const n = tool === 'terrain' ? brushN : tool === 'ceil' ? ceilBrushN : 1;   // show the brush footprint
+      const off = Math.floor((n-1)/2), x0 = atCell.x - off, y0 = atCell.y - off;
+      gl.ghost.scale.set(n, 1, n);
+      gl.ghost.position.set((x0 + n/2)*CS, colTop(c, ceilUnits()*HU)+4, -((y0 + n/2)*CS));
+    }
+  }
   cv.addEventListener('contextmenu', e => e.preventDefault());
   cv.addEventListener('mousedown', e => {
     if (walk.on) return;
@@ -1727,35 +2134,64 @@ function bindMouse(cv) {
     if (e.button === 0 && tool === 'select') {
       const th = pickThing(e, cv);          // in select mode, dragging a marker moves it
       if (th) down.moveThing = th;
+    } else if (e.button === 0 && !e.shiftKey && tool === 'stamp' && stampMode === 'copy') {
+      down.stampStart = pick(e, cv);        // begin defining the copy rectangle
+    } else if (e.button === 0 && !e.shiftKey && PAINT_TOOLS.has(tool)) {
+      down.painting = true;                 // drag-to-paint: track cells already painted this stroke
+      down.paintedCells = new Set();
     }
   });
   window.addEventListener('mousemove', e => {
     if (walk.on) return;
     const cell = pick(e, cv);
-    if (cell && !down) {
-      gl.ghost.visible = true;
+    if (cell && (!down || down.painting)) {
+      showToolGhost(cell);
       const c = grid[gi(cell.x,cell.y)];
-      const n = (tool === 'terrain' || tool === 'ceil') ? brushN : 1;   // show the brush footprint
-      const off = Math.floor((n-1)/2), x0 = cell.x - off, y0 = cell.y - off;
-      gl.ghost.scale.set(n, 1, n);
-      gl.ghost.position.set((x0 + n/2)*CS, colTop(c, ceilUnits()*HU)+4, -((y0 + n/2)*CS));
       $('stCell').textContent = 'cell '+cell.x+','+cell.y+'  floor '+(c.h*HU)+
-        (c.wall?'  [wall]':c.door?'  [door]':c.exit?'  [exit]':'')+
+        (c.wall?'  [wall]':c.door?'  [door' + (c.lock ? ' — ' + LOCKS[c.lock][0] + ' key' : '') + ']':c.exit?'  [exit]':'')+
         (c.thing?'  ['+(THING_TYPES.find(t=>t[0]===c.thing)||['?','?'])[1]+' → '+
           COMPASS[((c.ang ?? defAng(c.thing))/45)|0]+']':'');
-    } else if (!cell) { gl.ghost.visible = false; $('stCell').textContent = '–'; }
+    } else if (!cell && !down) { gl.ghost.visible = false; $('stCell').textContent = '–'; }
     if (!down) return;
     const dx = e.clientX-down.x, dy = e.clientY-down.y;
     if (Math.abs(dx)+Math.abs(dy) > 5) down.moved = true;
     if (!down.moved) return;
-    if (down.moveThing) {             // dragging an object: highlight the destination cell
-      const cell = pick(e, cv);
-      down.destCell = cell;
-      if (cell && gl.ready) {
-        const cc = grid[gi(cell.x, cell.y)];
+    if (down.moveThing) {             // dragging an object: highlight the destination cell + carry the real marker
+      const cell2 = pick(e, cv);
+      down.destCell = cell2;
+      if (cell2 && gl.ready) {
+        const cc = grid[gi(cell2.x, cell2.y)];
+        const top = colTop(cc, ceilUnits()*HU);
         gl.ghost.visible = true;
         gl.ghost.scale.set(1, 1, 1);
-        gl.ghost.position.set(cell.x*CS+CS/2, colTop(cc, ceilUnits()*HU)+4, -(cell.y*CS+CS/2));
+        gl.ghost.position.set(cell2.x*CS+CS/2, top+4, -(cell2.y*CS+CS/2));
+        if (down.moveThing.obj) {     // float the actual marker above the footprint, so it reads as "carried"
+          down.moveThing.obj.position.set(cell2.x*CS+CS/2, top+40, -(cell2.y*CS+CS/2));
+        }
+      }
+      return;
+    }
+    if (down.painting) {              // drag-to-paint: apply the tool to every newly-entered cell
+      if (cell) {
+        const sub = (tool === 'terrain' && terraSub) || (tool === 'ceil' && ceilSub);
+        const key = cell.x+','+cell.y + (sub ? ','+cell.sxi+','+cell.syi : '');
+        if (!down.paintedCells.has(key)) {
+          down.paintedCells.add(key);
+          if (down.paintedCells.size === 1) checkpoint();   // one undo step for the whole stroke
+          applyTool(cell.x, cell.y, cell.sxi, cell.syi, true);
+        }
+      }
+      return;
+    }
+    if (down.stampStart) {            // stamp Copy: live rectangle preview while dragging
+      if (cell) {
+        const xa = Math.min(down.stampStart.x, cell.x), xb = Math.max(down.stampStart.x, cell.x);
+        const ya = Math.min(down.stampStart.y, cell.y), yb = Math.max(down.stampStart.y, cell.y);
+        const w = xb-xa+1, h = yb-ya+1;
+        gl.ghost.visible = true;
+        gl.ghost.scale.set(w, 1, h);
+        const cc = grid[gi(cell.x, cell.y)];
+        gl.ghost.position.set((xa + w/2)*CS, colTop(cc, ceilUnits()*HU)+4, -((ya + h/2)*CS));
       }
       return;
     }
@@ -1774,7 +2210,7 @@ function bindMouse(cv) {
     if (!down) return;
     const wasClick = !down.moved;
     const btn = down.btn, shift = down.shift;
-    const mv = down.moveThing, dest = down.destCell;
+    const mv = down.moveThing, dest = down.destCell, stampStart = down.stampStart, painting = down.painting;
     down = null;
     if (mv && !wasClick) {            // finish an object drag-move
       if (dest && inb(dest.x, dest.y) && (dest.x !== mv.x || dest.y !== mv.y)) {
@@ -1784,18 +2220,32 @@ function bindMouse(cv) {
           dc.thing = sc.thing; dc.ang = sc.ang;
           sc.thing = 0;
           selCell = { x: dest.x, y: dest.y };
-          rebuild();
         }
       }
+      rebuild();   // always refresh — this also snaps the carried marker back if the drop was invalid
+      return;
+    }
+    if (painting && !wasClick) return;   // already painted live during the drag
+    if (stampStart && !wasClick) {       // finished dragging out a copy rectangle
+      const cell = pick(e, cv) || stampStart;
+      stampCopy(stampStart.x, stampStart.y, cell.x, cell.y);
       return;
     }
     if (!wasClick || shift) return;
     if (btn === 0) {
+      if (tool === 'stamp') {   // Stamp always acts on the cell, even if a thing sits on it —
+        const cell = pick(e, cv);              // checked first so clicking on/near a monster
+        if (!cell) return;                     // or item doesn't get hijacked into selecting it
+        if (stampMode === 'copy') stampCopy(cell.x, cell.y, cell.x, cell.y);   // plain click = 1×1 copy
+        else if (stampBuffer) stampPaste(cell.x - Math.floor((stampBuffer.w-1)/2), cell.y - Math.floor((stampBuffer.h-1)/2));
+        return;
+      }
       const th = pickThing(e, cv);          // clicking a marker selects it (rotate tool rotates it)
       if (th && tool === 'rotate') { applyTool(th.x, th.y); selCell = th; refreshInfo(); return; }
       if (th) { selCell = th; refreshInfo(); return; }
       const cell = pick(e, cv);
-      if (cell) applyTool(cell.x, cell.y);
+      if (!cell) return;
+      applyTool(cell.x, cell.y, cell.sxi, cell.syi);
     } else if (btn === 2) {
       const cell = pick(e, cv);
       if (cell) smartRemove(cell.x, cell.y);
@@ -1816,7 +2266,9 @@ function pickThing(e, cv) {
   if (!hits.length) return null;
   let o = hits[0].object;
   while (o && !(o.userData && o.userData.thing)) o = o.parent;
-  return o ? { x: o.userData.x, y: o.userData.y } : null;
+  // `obj` is the actual THREE group for this marker — used to carry the real marker along
+  // during a Select/Move drag instead of just showing a generic ghost box.
+  return o ? { x: o.userData.x, y: o.userData.y, obj: o } : null;
 }
 function pick(e, cv) {
   if (!gl.ready || !gl.world) return null;
@@ -1830,11 +2282,18 @@ function pick(e, cv) {
   const p = h.point.clone();
   if (h.face) p.addScaledVector(h.face.normal, -0.5);
   const cx = Math.floor(p.x/CS), cy = Math.floor(-p.z/CS);
-  return inb(cx,cy) ? {x:cx, y:cy} : null;
+  if (!inb(cx,cy)) return null;
+  // quarter-cell (sxi,syi) the hit point falls in, for the ¼×¼ Terrain/Ceiling brush —
+  // other tools/callers just ignore these extra fields.
+  const sxi = Math.max(0, Math.min(SUBN-1, Math.floor((p.x - cx*CS)/SS)));
+  const syi = Math.max(0, Math.min(SUBN-1, Math.floor((-p.z - cy*CS)/SS)));
+  return {x:cx, y:cy, sxi, syi};
 }
 
 // ================= walk mode: first-person preview =================
-const walk = { on:false, x:0, z:0, feet:0, vy:0, yaw:0, pitch:0, keys:{}, doors:{}, tpGuard:false, savedCam:null };
+const walk = { on:false, x:0, z:0, feet:0, vy:0, yaw:0, pitch:0, keys:{}, doors:{}, tpGuard:false, savedCam:null,
+  fly:false, noclip:false };   // Fly: free vertical movement, still blocked by walls/doors.
+                                // Noclip: free movement through everything, incl. walls/doors.
 $('btnWalk').onclick = () => walk.on ? exitWalk() : enterWalk();
 function wCeil() { return ceilUnits()*HU; }
 function cellAt(px, pz) {
@@ -1853,6 +2312,21 @@ function passable(px, pz) {
   }
   const top = wTop(c);
   return (top - walk.feet <= 24) && (wCeil() - top >= 56);
+}
+// Fly still respects walls and closed doors, but skips the step-height/headroom checks that
+// `passable` enforces for walking — otherwise flying more than 24 units above a floor would
+// block ALL horizontal movement, since normal movement treats "too high above the floor" the
+// same as "blocked."
+function flyPassable(px, pz) {
+  const cell = cellAt(px, pz);
+  if (!cell) return false;
+  const c = cell.c;
+  if (c.wall || c.exit) return false;
+  if (c.door) {
+    const d = walk.doors[cell.key];
+    return !!d && d.frac > 0.85;
+  }
+  return true;
 }
 function groundAt(px, pz) {
   let g = 0;
@@ -1877,7 +2351,7 @@ function enterWalk() {
   const sc = cellAt(sx, sz);
   walk.feet = (sc && !sc.c.wall && !sc.c.exit) ? wTop(sc.c) : 0;
   walk.vy = 0; walk.yaw = (sa - 90) * Math.PI/180; walk.pitch = 0;
-  walk.keys = {}; walk.doors = {}; walk.tpGuard = true;
+  walk.keys = {}; walk.doors = {}; walk.tpGuard = true; walk.fly = false; walk.noclip = false;
   walk.savedCam = { theta: gl.cam.theta, phi: gl.cam.phi, dist: gl.cam.dist, target: gl.cam.target.clone() };
   gl.camera.rotation.set(0, 0, 0, 'YXZ');
   rebuild();
@@ -1886,7 +2360,7 @@ function enterWalk() {
   makeSky();
   $('btnWalk').textContent = 'Exit Walk';
   $('btnWalk').classList.add('active');
-  $('stTool').textContent = 'walk: click to capture mouse · WASD move · Shift run · Space/E use · Esc exit';
+  $('stTool').textContent = 'walk: click to capture mouse · WASD move · Shift run · Space/E use · F fly · N noclip · Esc exit';
 }
 function exitWalk() {
   walk.on = false;
@@ -1927,6 +2401,10 @@ function useAction() {
   const cell = cellAt(walk.x + fx*52, walk.z + fz*52);
   if (!cell) return;
   if (cell.c.door) {
+    if (cell.c.lock) {   // preview has no inventory to check against — just flag the requirement
+      $('stMsg').textContent = '🔒 Locked — needs the ' + LOCKS[cell.c.lock][0] + ' key.';
+      return;
+    }
     const d = walk.doors[cell.key] = walk.doors[cell.key] || { frac:0, state:'closed', hold:0 };
     if (d.state === 'closed' || d.state === 'closing') d.state = 'opening';
   } else if (cell.c.exit) {
@@ -1967,16 +2445,25 @@ function walkStep(dt) {
   if (walk.keys.KeyA || walk.keys.ArrowLeft)  { dx -= rx*sp; dz -= rz*sp; }
   if (walk.keys.KeyD || walk.keys.ArrowRight) { dx += rx*sp; dz += rz*sp; }
   const R = 15;
-  const fits = (px, pz) => passable(px-R, pz-R) && passable(px+R, pz-R) && passable(px-R, pz+R) && passable(px+R, pz+R);
+  const passFn = walk.noclip ? (() => true) : walk.fly ? flyPassable : passable;
+  const fits = (px, pz) => passFn(px-R, pz-R) && passFn(px+R, pz-R) && passFn(px-R, pz+R) && passFn(px+R, pz+R);
   if (dx && fits(walk.x + dx, walk.z)) walk.x += dx;
   if (dz && fits(walk.x, walk.z + dz)) walk.z += dz;
-  // gravity & step-up
-  const g = groundAt(walk.x, walk.z);
-  if (walk.feet < g) { walk.feet = g; walk.vy = 0; }
-  else if (walk.feet > g) {
-    walk.vy -= 2400*dt;
-    walk.feet = Math.max(g, walk.feet + walk.vy*dt);
-    if (walk.feet === g) walk.vy = 0;
+  // gravity & step-up (suspended in Fly/Noclip — Space/C move freely up/down instead)
+  if (walk.fly || walk.noclip) {
+    const vsp = ((walk.keys.ShiftLeft || walk.keys.ShiftRight) ? 420 : 260) * dt;
+    if (walk.keys.Space) walk.feet += vsp;
+    if (walk.keys.KeyC) walk.feet -= vsp;
+    if (!walk.noclip) walk.feet = Math.max(0, walk.feet);   // Fly still can't sink below the world floor
+    walk.vy = 0;
+  } else {
+    const g = groundAt(walk.x, walk.z);
+    if (walk.feet < g) { walk.feet = g; walk.vy = 0; }
+    else if (walk.feet > g) {
+      walk.vy -= 2400*dt;
+      walk.feet = Math.max(g, walk.feet + walk.vy*dt);
+      if (walk.feet === g) walk.vy = 0;
+    }
   }
   // teleporters fire when you step on the pad (not on arrival)
   const pc = cellAt(walk.x, walk.z);
@@ -2007,7 +2494,12 @@ function walkStep(dt) {
 window.addEventListener('keydown', e => {
   if (!walk.on || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
   walk.keys[e.code] = true;
-  if (e.code === 'Space' || e.code === 'KeyE') { useAction(); e.preventDefault(); }
+  // Space doubles as "use" only when walking normally — in Fly/Noclip it's ascend instead
+  // (held continuously via walk.keys.Space in walkStep), so it shouldn't also open/use things.
+  if (e.code === 'Space') { if (!walk.fly && !walk.noclip) useAction(); e.preventDefault(); }
+  if (e.code === 'KeyE') { useAction(); e.preventDefault(); }
+  if (e.code === 'KeyF') { walk.fly = !walk.fly; walk.vy = 0; $('stMsg').textContent = 'fly ' + (walk.fly ? 'ON' : 'off'); }
+  if (e.code === 'KeyN') { walk.noclip = !walk.noclip; walk.vy = 0; $('stMsg').textContent = 'noclip ' + (walk.noclip ? 'ON' : 'off'); }
   if (e.code.startsWith('Arrow')) e.preventDefault();
 });
 window.addEventListener('keyup', e => { walk.keys[e.code] = false; });
