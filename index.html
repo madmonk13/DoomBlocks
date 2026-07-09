@@ -219,6 +219,18 @@
       <button class="tool" data-tool="stamp" data-stampmode="paste" style="flex:1" title="Click to paste the copied area, centered on the cursor"><span class="chip" style="background:#4aa8ff"></span>Paste</button>
     </div>
     <div id="optStamp" class="opts hidden">
+      <div id="optStampSize">
+        <div class="row"><label>Width</label>
+          <button id="stampWMinus" title="Size of the block a plain click copies (drag still works for a custom rectangle)">−</button>
+          <span id="stampWLbl" style="min-width:24px;text-align:center;color:var(--text)">1</span>
+          <button id="stampWPlus">+</button>
+        </div>
+        <div class="row"><label>Height</label>
+          <button id="stampHMinus" title="Size of the block a plain click copies (drag still works for a custom rectangle)">−</button>
+          <span id="stampHLbl" style="min-width:24px;text-align:center;color:var(--text)">1</span>
+          <button id="stampHPlus">+</button>
+        </div>
+      </div>
       <div id="stampInfo" style="color:var(--dim)">nothing copied yet</div>
     </div>
     <h3>Info</h3>
@@ -399,6 +411,8 @@ fillThings();
 let paintSurf = 0, paintWall = 0, paintCeil = 0, doorLock = 0;
 let stampMode = 'copy';         // 'copy' | 'paste'
 let stampBuffer = null;         // { w, h, cells: [...] } — deep-cloned cells, row-major; null = nothing copied yet
+let stampW = 1, stampH = 1;     // click-to-copy size (a step counter, so a plain click can grab a big block
+                                 // without needing a precise drag); dragging still defines a custom rectangle
 // tools that support drag-to-paint: holding the mouse down and dragging applies the tool to
 // every newly-entered cell, batched into a single undo step. Select/Rotate/Objects/Stamp/Fill
 // stay click-only (dragging a marker in Select mode already means something else; a flood
@@ -432,6 +446,10 @@ $('brushSel').onchange = () => {
   if (!terraSub) brushN = +v;
   syncTools();
 };
+$('stampWMinus').onclick = () => { stampW = Math.max(1, stampW - 1); $('stampWLbl').textContent = stampW; syncTools(); };
+$('stampWPlus').onclick = () => { stampW = Math.min(64, stampW + 1); $('stampWLbl').textContent = stampW; syncTools(); };
+$('stampHMinus').onclick = () => { stampH = Math.max(1, stampH - 1); $('stampHLbl').textContent = stampH; syncTools(); };
+$('stampHPlus').onclick = () => { stampH = Math.min(64, stampH + 1); $('stampHLbl').textContent = stampH; syncTools(); };
 $('ceilStepMinus').onclick = () => { ceilStep = Math.max(16, ceilStep - 16); $('ceilStepLbl').textContent = ceilStep; syncTools(); };
 $('ceilStepPlus').onclick = () => { ceilStep = Math.min(128, ceilStep + 16); $('ceilStepLbl').textContent = ceilStep; syncTools(); };
 $('ceilBrushSel').onchange = () => {
@@ -454,6 +472,7 @@ function syncTools() {
   $('optDoor').classList.toggle('hidden', tool !== 'door');
   $('optThing').classList.toggle('hidden', tool !== 'thing');
   $('optStamp').classList.toggle('hidden', tool !== 'stamp');
+  $('optStampSize').classList.toggle('hidden', stampMode !== 'copy');
   $('stampInfo').textContent = stampBuffer ? stampBuffer.w + '×' + stampBuffer.h + ' cells ready to paste' : 'nothing copied yet';
   $('surfChip').style.background = SURFS[paintSurf][2];
   $('wallChip').style.background = WALLMATS[paintWall][2];
@@ -472,7 +491,7 @@ function syncTools() {
     : tool === 'thing' ? 'place: ' + $('thingSel').selectedOptions[0].text
     : tool === 'stamp' ? 'stamp: ' + stampMode + (stampMode === 'paste'
         ? (stampBuffer ? ' — click to place the ' + stampBuffer.w + '×' + stampBuffer.h + ' stamp' : ' — copy something first')
-        : ' — drag a rectangle (or click for one cell)')
+        : ' — click to copy ' + stampW + '×' + stampH + ' (or drag for a custom rectangle)')
     : 'tool: ' + tool;
 }
 $('helpClose').onclick = () => $('help').classList.add('hidden');
@@ -2108,6 +2127,10 @@ function bindMouse(cv) {
         const ox = atCell.x - Math.floor((stampBuffer.w-1)/2), oy = atCell.y - Math.floor((stampBuffer.h-1)/2);
         gl.ghost.scale.set(stampBuffer.w, 1, stampBuffer.h);
         gl.ghost.position.set((ox + stampBuffer.w/2)*CS, colTop(c, ceilUnits()*HU)+4, -((oy + stampBuffer.h/2)*CS));
+      } else if (stampMode === 'copy') {   // preview the click-to-copy footprint set by the W/H steppers
+        const ox = atCell.x - Math.floor((stampW-1)/2), oy = atCell.y - Math.floor((stampH-1)/2);
+        gl.ghost.scale.set(stampW, 1, stampH);
+        gl.ghost.position.set((ox + stampW/2)*CS, colTop(c, ceilUnits()*HU)+4, -((oy + stampH/2)*CS));
       } else {
         gl.ghost.scale.set(1, 1, 1);
         gl.ghost.position.set(atCell.x*CS+CS/2, colTop(c, ceilUnits()*HU)+4, -(atCell.y*CS+CS/2));
@@ -2236,7 +2259,10 @@ function bindMouse(cv) {
       if (tool === 'stamp') {   // Stamp always acts on the cell, even if a thing sits on it —
         const cell = pick(e, cv);              // checked first so clicking on/near a monster
         if (!cell) return;                     // or item doesn't get hijacked into selecting it
-        if (stampMode === 'copy') stampCopy(cell.x, cell.y, cell.x, cell.y);   // plain click = 1×1 copy
+        if (stampMode === 'copy') {       // plain click copies a stampW×stampH block, centered on the click
+          const ox = cell.x - Math.floor((stampW-1)/2), oy = cell.y - Math.floor((stampH-1)/2);
+          stampCopy(ox, oy, ox + stampW - 1, oy + stampH - 1);
+        }
         else if (stampBuffer) stampPaste(cell.x - Math.floor((stampBuffer.w-1)/2), cell.y - Math.floor((stampBuffer.h-1)/2));
         return;
       }

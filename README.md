@@ -110,13 +110,17 @@ Right-drag still orbits the camera as usual, so building and navigating never co
   shows facing.
 - **Stamp** — copy a rectangular area and paste it elsewhere, including onto another level (the
   copied buffer isn't tied to the level you copied it from). **Copy**: drag a rectangle over the
-  area to duplicate, or click for a single cell. **Paste**: click anywhere to stamp the copied
-  area, centered on the cursor — the hover highlight previews exactly where it'll land. Paste as
-  many times as you like; the buffer stays until you copy something else. Everything about the
-  copied cells comes along — walls, doors and their locks, paint, ¼×¼ terrain/ceiling sculpting,
-  and placed things. If the stamp contains a Player 1 Start, pasting it moves the level's start
-  there and clears any other one (a level can only have one). Pastes that overhang the map edge
-  are simply clipped to fit.
+  area to duplicate, or click for a quick grab — a plain click copies a block of the size set by
+  the **Width**/**Height** steppers (1×1 by default), centered on the cursor, so you can copy a
+  large area precisely without needing a careful drag; the hover highlight always previews the
+  exact footprint a click will grab. Dragging still defines a custom rectangle regardless of the
+  stepper values. **Paste**: click anywhere to stamp the copied area, centered on the cursor — the
+  hover highlight previews exactly where it'll land. Paste as many times as you like; the buffer
+  stays until you copy something else. Everything about the copied cells comes along — walls,
+  doors and their locks, paint, ¼×¼ terrain/ceiling sculpting, and placed things. If the stamp
+  contains a Player 1 Start, pasting it moves the level's start there and clears any other one (a
+  level can only have one). Pastes (and copies) that overhang the map edge are simply clipped to
+  fit.
 
 ## Teleporters
 
