@@ -28,7 +28,7 @@
   .opts { margin:2px 0 8px; padding:8px 8px 2px; background:#1e1e23; border:1px solid var(--border); border-radius:6px; }
   .chip { width:14px; height:14px; border-radius:3px; flex:0 0 14px; border:1px solid rgba(255,255,255,.25); }
   #status { padding:4px 10px; background:var(--panel); border-top:1px solid var(--border); color:var(--dim); font-size:12px; display:flex; gap:16px; }
-  #help { position:absolute; top:10px; left:10px; background:rgba(30,30,35,.92); border:1px solid var(--border); border-radius:8px; padding:12px 26px 12px 16px; font-size:12px; color:var(--dim); max-width:360px; pointer-events:none; }
+  #help { position:absolute; top:10px; left:10px; background:rgba(30,30,35,.92); border:1px solid var(--border); border-radius:8px; padding:12px 26px 12px 16px; font-size:12px; color:var(--dim); max-width:360px; max-height:calc(100% - 20px); overflow-y:auto; pointer-events:auto; }
   #help b { color:var(--text); }
   #help .k { display:inline-block; background:#333; border-radius:3px; padding:0 5px; color:var(--text); font-family:monospace; }
   #helpClose { pointer-events:auto; position:absolute; top:5px; right:5px; padding:0 6px; font-size:11px; background:transparent; border:none; color:var(--dim); }
@@ -102,6 +102,17 @@
       (teleporter pair → thing → structure → pad paint → one step of terrain, in that order).<br><br>
       <b>Drag</b> to orbit · <b>wheel</b> to zoom · <b>middle-drag / shift-drag / arrows / WASD</b> to pan.
       In Select mode, drag an object to move it to another cell.<br><br>
+      <b>Tool hotkeys:</b> <b>Space</b> Select/Move · <b>1</b> Terrain · <b>2</b> Ceiling ·
+      <b>3</b> Ceiling paint (<b>Shift+3</b> Fill) · <b>4</b> Erase · <b>5</b> Wall · <b>6</b> Door ·
+      <b>7</b> Exit switch · <b>8</b> Floor paint (<b>Shift+8</b> Fill) ·
+      <b>9</b> Wall paint (<b>Shift+9</b> Fill) · <b>0</b> Place Object · <b>R</b> Rotate ·
+      <b>C</b> Stamp Copy · <b>V</b> Stamp Paste · <b>P</b> Vector Select.<br><br>
+      <b>Vector Select</b>: click points to outline a shape — after the 3rd point, the start point
+      grows into a bigger dot; click it (or press Enter, or the sidebar's Close Loop button) to
+      close the loop. Backspace (or the sidebar's Undo Point button) undoes a point, Esc cancels.
+      Closing the loop rasterizes it onto the
+      grid; set a height/texture and click Apply. The shape then stays selected as a block —
+      Terrain/Ceiling/Paint clicks apply to the whole thing until you press Esc.<br><br>
       <b>Walk</b> drops you into the map in first person: gravity, working doors (Space/E),
       and live teleporters. Load an IWAD first for the full effect.<br><br>
       Cells tinted <b style="color:#ff6a5a">red</b> have under 56 units of headroom — the player
@@ -123,11 +134,11 @@
   </div>
   <div id="sidebar">
     <h3>Mode</h3>
-    <button class="tool" data-tool="select" title="Click any placed object to inspect it, or drag to move it. Camera drag-to-orbit now only applies in this mode — other tools drag-paint instead"><span class="chip" style="background:#ffd24a"></span>Select/Move</button>
+    <button class="tool" data-tool="select" title="Click any placed object to inspect it, or drag to move it. Camera drag-to-orbit now only applies in this mode — other tools drag-paint instead · hotkey Space"><span class="chip" style="background:#ffd24a"></span>Select/Move</button>
     <h3>Terrain</h3>
     <div style="display:flex;gap:4px">
-      <button class="tool" data-tool="terrain" data-dir="raise" style="flex:1" title="Click to raise terrain by the step"><span class="chip" style="background:#a5abb1"></span>Raise</button>
-      <button class="tool" data-tool="terrain" data-dir="lower" style="flex:1" title="Click to lower terrain by the step"><span class="chip" style="background:#4a4f54"></span>Lower</button>
+      <button class="tool" data-tool="terrain" data-dir="raise" style="flex:1" title="Click to raise terrain by the step · hotkey 1"><span class="chip" style="background:#a5abb1"></span>Raise</button>
+      <button class="tool" data-tool="terrain" data-dir="lower" style="flex:1" title="Click to lower terrain by the step · hotkey 1"><span class="chip" style="background:#4a4f54"></span>Lower</button>
     </div>
     <div id="optTerrain" class="opts hidden">
       <div class="row"><label>Step</label>
@@ -149,8 +160,8 @@
     </div>
     <h3>Ceiling</h3>
     <div style="display:flex;gap:4px">
-      <button class="tool" data-tool="ceil" data-dir="lower" style="flex:1" title="Lower the ceiling. Used on a door, this caps how high the door opens and leaves normal wall above it instead"><span class="chip" style="background:#565b68"></span>Lower</button>
-      <button class="tool" data-tool="ceil" data-dir="raise" style="flex:1" title="Raise a lowered ceiling back toward the level ceiling"><span class="chip" style="background:#7d838f"></span>Raise</button>
+      <button class="tool" data-tool="ceil" data-dir="lower" style="flex:1" title="Lower the ceiling. Used on a door, this caps how high the door opens and leaves normal wall above it instead · hotkey 2"><span class="chip" style="background:#565b68"></span>Lower</button>
+      <button class="tool" data-tool="ceil" data-dir="raise" style="flex:1" title="Raise a lowered ceiling back toward the level ceiling · hotkey 2"><span class="chip" style="background:#7d838f"></span>Raise</button>
     </div>
     <div id="optCeilStep" class="opts hidden">
       <div class="row"><label>Step</label>
@@ -171,16 +182,16 @@
       </div>
     </div>
     <div style="display:flex;gap:4px">
-      <button class="tool" data-tool="cpaint" style="flex:1"><span class="chip" id="ceilChip"></span>Paint</button>
-      <button class="tool" data-tool="fillceil" style="flex:1" title="Flood-fill the connected area of matching ceiling">Fill</button>
+      <button class="tool" data-tool="cpaint" style="flex:1" title="hotkey 3"><span class="chip" id="ceilChip"></span>Paint</button>
+      <button class="tool" data-tool="fillceil" style="flex:1" title="Flood-fill the connected area of matching ceiling · hotkey Shift+3">Fill</button>
     </div>
     <div id="optCeil" class="opts hidden">
       <select id="ceilSel" style="width:100%"></select>
     </div>
-    <button class="tool" data-tool="erase"><span class="chip" style="background:#2a2a30"></span>Erase column</button>
+    <button class="tool" data-tool="erase" title="hotkey 4"><span class="chip" style="background:#2a2a30"></span>Erase column</button>
     <h3>Structure</h3>
-    <button class="tool" data-tool="wall"><span class="chip" style="background:#5f6a80"></span>Wall (to ceiling)</button>
-    <button class="tool" data-tool="door" title="Place with the lock below (None = an ordinary door). Re-click an existing door to change its lock"><span class="chip" id="lockChip" style="background:#c9a13b"></span>Door</button>
+    <button class="tool" data-tool="wall" title="hotkey 5"><span class="chip" style="background:#5f6a80"></span>Wall (to ceiling)</button>
+    <button class="tool" data-tool="door" title="Place with the lock below (None = an ordinary door). Re-click an existing door to change its lock · hotkey 6"><span class="chip" id="lockChip" style="background:#c9a13b"></span>Door</button>
     <div id="optDoor" class="opts hidden">
       <select id="lockSel" style="width:100%">
         <option value="0">No lock (ordinary door)</option>
@@ -189,34 +200,34 @@
         <option value="3">Red key required</option>
       </select>
     </div>
-    <button class="tool" data-tool="exit"><span class="chip" style="background:#3fae5a"></span>Exit switch</button>
+    <button class="tool" data-tool="exit" title="hotkey 7"><span class="chip" style="background:#3fae5a"></span>Exit switch</button>
     <h3>Floor paint</h3>
     <div style="display:flex;gap:4px">
-      <button class="tool" data-tool="paint" style="flex:1"><span class="chip" id="surfChip"></span>Paint</button>
-      <button class="tool" data-tool="fillfloor" style="flex:1" title="Flood-fill the connected area of matching floor">Fill</button>
+      <button class="tool" data-tool="paint" style="flex:1" title="hotkey 8"><span class="chip" id="surfChip"></span>Paint</button>
+      <button class="tool" data-tool="fillfloor" style="flex:1" title="Flood-fill the connected area of matching floor · hotkey Shift+8">Fill</button>
     </div>
     <div id="optFloor" class="opts hidden">
       <select id="surfSel" style="width:100%"></select>
     </div>
     <h3>Wall paint</h3>
     <div style="display:flex;gap:4px">
-      <button class="tool" data-tool="wpaint" style="flex:1"><span class="chip" id="wallChip"></span>Paint</button>
-      <button class="tool" data-tool="fillwall" style="flex:1" title="Flood-fill the connected run of matching wall blocks">Fill</button>
+      <button class="tool" data-tool="wpaint" style="flex:1" title="hotkey 9"><span class="chip" id="wallChip"></span>Paint</button>
+      <button class="tool" data-tool="fillwall" style="flex:1" title="Flood-fill the connected run of matching wall blocks · hotkey Shift+9">Fill</button>
     </div>
     <div id="optWall" class="opts hidden">
       <select id="wallSel" style="width:100%"></select>
     </div>
     <h3>Objects</h3>
-    <button class="tool" data-tool="thing" id="placeBtn"><span class="chip" id="thingChip" style="background:#4aa8ff"></span>Place Object</button>
+    <button class="tool" data-tool="thing" id="placeBtn" title="hotkey 0"><span class="chip" id="thingChip" style="background:#4aa8ff"></span>Place Object</button>
     <div id="optThing" class="opts hidden">
       <select id="catSel" style="width:100%"></select>
       <select id="thingSel" style="width:100%;margin-top:4px"></select>
     </div>
-    <button class="tool" data-tool="rotate" title="Click a placed object to turn it 45° counter-clockwise; new objects keep the last rotation"><span class="chip" style="background:#d8d8dc"></span>Rotate Object (45°)</button>
+    <button class="tool" data-tool="rotate" title="Click a placed object to turn it 45° counter-clockwise; new objects keep the last rotation · hotkey R"><span class="chip" style="background:#d8d8dc"></span>Rotate Object (45°)</button>
     <h3>Stamp</h3>
     <div style="display:flex;gap:4px">
-      <button class="tool" data-tool="stamp" data-stampmode="copy" style="flex:1" title="Drag a rectangle to copy that area (or click for a single cell)"><span class="chip" style="background:#4aa8ff"></span>Copy</button>
-      <button class="tool" data-tool="stamp" data-stampmode="paste" style="flex:1" title="Click to paste the copied area, centered on the cursor"><span class="chip" style="background:#4aa8ff"></span>Paste</button>
+      <button class="tool" data-tool="stamp" data-stampmode="copy" style="flex:1" title="Drag a rectangle to copy that area (or click for a single cell) · hotkey C"><span class="chip" style="background:#4aa8ff"></span>Copy</button>
+      <button class="tool" data-tool="stamp" data-stampmode="paste" style="flex:1" title="Click to paste the copied area, centered on the cursor · hotkey V"><span class="chip" style="background:#4aa8ff"></span>Paste</button>
     </div>
     <div id="optStamp" class="opts hidden">
       <div id="optStampSize">
@@ -233,6 +244,28 @@
       </div>
       <div id="stampInfo" style="color:var(--dim)">nothing copied yet</div>
     </div>
+    <h3>Vector Select</h3>
+    <button class="tool" data-tool="vector" title="Click points to outline any shape; click the enlarged start dot (or Enter) to close it — Backspace undoes a point, Esc cancels · hotkey P"><span class="chip" style="background:#ffd24a"></span>Vector Select</button>
+    <div id="optVector" class="opts hidden">
+      <div class="row" style="color:var(--dim)">Click points. After 3, the start dot grows — click it (or press Enter) to close.</div>
+      <div class="row">
+        <button id="vecCloseBtn" class="hidden" style="flex:1">Close Loop (Enter)</button>
+        <button id="vecUndoBtn" class="hidden" style="flex:1">Undo Point (Bksp)</button>
+      </div>
+    </div>
+    <div id="optVectorConfirm" class="opts hidden">
+      <div class="row"><label>Height</label>
+        <button id="vecHMinus" title="16 = one stair step">−</button>
+        <span id="vecHLbl" style="min-width:34px;text-align:center;color:var(--text)">32</span>
+        <button id="vecHPlus">+</button>
+      </div>
+      <select id="vecSurfSel" style="width:100%;margin-top:4px"></select>
+      <div style="display:flex;gap:4px;margin-top:8px">
+        <button id="vecApply" style="flex:1">Apply</button>
+        <button id="vecCancel" style="flex:1">Cancel</button>
+      </div>
+      <div id="vecCount" style="color:var(--dim);margin-top:4px"></div>
+    </div>
     <h3>Info</h3>
     <div class="row"><label>Grid</label><span id="infoGrid" style="color:var(--dim)"></span></div>
     <div class="row"><label>Blocks</label><span id="infoBlocks" style="color:var(--dim)">0</span></div>
@@ -247,7 +280,7 @@ let W = 32, D = 32;                           // grid size (editable)
 const CS = 64, HU = 16;                       // cell size, height unit
 const HMAX = 28;                              // max terrain in height-units (448)
 const SUBN = 4, SS = CS/SUBN;                 // Terrain/Ceiling can also sculpt in 16-unit quarters
-function newCol(){ return { h:0, ch:0, wall:false, door:false, exit:false, surf:0, wmat:0, cmat:0, lock:0, thing:0, tele:0, sh:null, sch:null }; }
+function newCol(){ return { h:0, ch:0, wall:false, door:false, exit:false, surf:0, wmat:0, cmat:0, lock:0, thing:0, tele:0, sh:null, sch:null, ssurf:null }; }
 let grid = Array.from({length:W*D}, newCol);
 let levels = [], cur = 0;                     // multi-level project state
 const gi = (x,y) => y*W + x;
@@ -261,6 +294,12 @@ function subFloorH(c, sxi, syi) { return c.sh ? c.sh[sidx(sxi,syi)] : c.h; }
 function subCeilCh(c, sxi, syi) { return c.sch ? c.sch[sidx(sxi,syi)] : (c.ch||0); }
 function collapseSh(c) { if (c.sh && c.sh.every(v => v === c.sh[0])) { c.h = c.sh[0]; c.sh = null; } }
 function collapseSch(c) { if (c.sch && c.sch.every(v => v === c.sch[0])) { c.ch = c.sch[0]; c.sch = null; } }
+// sub-cell floor TEXTURE, same idea as sh/sch above but for `surf` — only Vector Select ever
+// creates these (a boundary cell where the shape covers only some of the 16 sub-cells needs a
+// different texture on the covered part than the untouched remainder). Every other tool that
+// paints floor texture stays whole-cell and clears ssurf back to uniform.
+function subSurf(c, sxi, syi) { return c.ssurf ? c.ssurf[sidx(sxi,syi)] : c.surf; }
+function collapseSsurf(c) { if (c.ssurf && c.ssurf.every(v => v === c.ssurf[0])) { c.surf = c.ssurf[0]; c.ssurf = null; } }
 
 const SURFS = [ // [label, flat, css color, sector special]
   ['Tech',   'FLOOR4_8', '#878c91', 0],
@@ -418,10 +457,185 @@ let stampW = 1, stampH = 1;     // click-to-copy size (a step counter, so a plai
 // stay click-only (dragging a marker in Select mode already means something else; a flood
 // fill or a whole-map stamp doesn't have a natural "per-cell" meaning to drag).
 const PAINT_TOOLS = new Set(['terrain','ceil','wall','door','exit','paint','wpaint','cpaint','erase']);
+
+// ---- vector select: click points to outline an arbitrary shape, then rasterize it onto the
+// 16-unit sub-cell grid (whole cells where the shape fully covers a cell, sub-cells along the
+// boundary) — the closest fit the existing sub-cell height system can represent. The result is
+// ordinary cells/sh arrays, identical to hand-painted ¼×¼ terrain, so compile()/rebuild() need
+// no changes at all. The rasterized set persists as `vecGroup`, a lightweight "grabbed" selection
+// that Terrain/Ceiling/Paint apply to as a whole until it's cleared.
+let vecPoints = [];     // {wx,wy} world-unit vertices of the polygon currently being drawn
+let vecRaster = null;   // { whole:[{x,y}], sub:[{x,y,sxi,syi}] } — computed on close, pending Apply
+let vecGroup = null;    // same shape as vecRaster, once Applied — the persistent "selected block"
+let vecH = 32, vecSurf = 0;   // target height (map units) + floor texture for the next Apply
+function pointInPoly(px, py, pts) {   // even-odd ray-casting test
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const xi = pts[i].wx, yi = pts[i].wy, xj = pts[j].wx, yj = pts[j].wy;
+    if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi)) inside = !inside;
+  }
+  return inside;
+}
+function rasterizePolygon(pts) {
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const p of pts) { minX = Math.min(minX,p.wx); maxX = Math.max(maxX,p.wx); minY = Math.min(minY,p.wy); maxY = Math.max(maxY,p.wy); }
+  const cx0 = Math.max(0, Math.floor(minX/CS)), cx1 = Math.min(W-1, Math.floor(maxX/CS));
+  const cy0 = Math.max(0, Math.floor(minY/CS)), cy1 = Math.min(D-1, Math.floor(maxY/CS));
+  const whole = [], sub = [];
+  for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) {
+    const flags = []; let count = 0;
+    for (let syi = 0; syi < SUBN; syi++) for (let sxi = 0; sxi < SUBN; sxi++) {
+      const x0 = cx*CS + sxi*SS, y0 = cy*CS + syi*SS;
+      // sample the sub-cell's center plus its 4 corners, not just the center — a shape smaller
+      // than one 16-unit sub-cell (very plausible on a first try) can slip entirely between
+      // sample points if only the center is tested, silently rasterizing to nothing at all
+      const inside =
+        pointInPoly(x0+SS/2, y0+SS/2, pts) || pointInPoly(x0, y0, pts) || pointInPoly(x0+SS, y0, pts) ||
+        pointInPoly(x0, y0+SS, pts) || pointInPoly(x0+SS, y0+SS, pts);
+      flags.push(inside); if (inside) count++;
+    }
+    if (count === 0) continue;
+    if (count === SUBN*SUBN) whole.push({x:cx, y:cy});
+    else for (let i = 0; i < flags.length; i++) if (flags[i]) sub.push({x:cx, y:cy, sxi:i%SUBN, syi:Math.floor(i/SUBN)});
+  }
+  return { whole, sub };
+}
+function vecSubByCell(subs) {   // group a flat sub-cell list by parent cell, for touching each cell's sh array once
+  const byCell = new Map();
+  for (const s of subs) {
+    const key = s.x+','+s.y;
+    if (!byCell.has(key)) byCell.set(key, []);
+    byCell.get(key).push(s);
+  }
+  return byCell;
+}
+function closeVectorLoop() {
+  if (vecPoints.length < 3) { $('stMsg').textContent = 'need at least 3 points to close a shape'; return; }
+  vecRaster = rasterizePolygon(vecPoints);
+  if (!vecRaster.whole.length && !vecRaster.sub.length) {
+    $('stMsg').textContent = "that outline doesn't cover any cells — try a larger shape";
+    vecPoints = []; vecRaster = null; updateVecPreview(); return;
+  }
+  $('optVectorConfirm').classList.remove('hidden');
+  $('vecCount').textContent = (vecRaster.whole.length*16 + vecRaster.sub.length) + ' sub-cells covered';
+  $('stMsg').textContent = 'set a height and texture, then Apply';
+  // #sidebar scrolls independently (overflow-y:auto) — the confirm panel can open successfully
+  // below the visible fold and look like closing "did nothing." Force it into view every time.
+  $('optVectorConfirm').scrollIntoView({ block: 'nearest' });
+}
+function applyVectorGroup() {
+  if (!vecRaster) return;
+  checkpoint();
+  const maxH = Math.min(HMAX, ceilUnits());
+  const targetH = Math.max(0, Math.min(maxH, Math.round(vecH/HU)));
+  const wholeApplied = [], subApplied = [];
+  for (const {x,y} of vecRaster.whole) {
+    const c = grid[gi(x,y)];
+    if (c.wall || c.door || c.exit) continue;
+    c.h = targetH; c.sh = null; c.surf = vecSurf; c.ssurf = null;
+    wholeApplied.push({x,y});
+  }
+  for (const [key, subs] of vecSubByCell(vecRaster.sub)) {
+    const [x,y] = key.split(',').map(Number);
+    const c = grid[gi(x,y)];
+    if (c.wall || c.door || c.exit) continue;
+    if (!c.sh) c.sh = Array(16).fill(c.h);
+    if (!c.ssurf) c.ssurf = Array(16).fill(c.surf);
+    for (const s of subs) {
+      const i = sidx(s.sxi,s.syi);
+      c.sh[i] = targetH; c.ssurf[i] = vecSurf; subApplied.push(s);
+    }
+    collapseSh(c);
+    collapseSsurf(c);   // only paint the sub-cells the shape actually covers — the rest of the
+                         // cell keeps its original texture instead of getting overwritten too
+  }
+  vecGroup = { whole: wholeApplied, sub: subApplied };
+  vecPoints = []; vecRaster = null;
+  $('optVectorConfirm').classList.add('hidden');
+  $('stMsg').textContent = 'block created — now selected as a group; Raise/Lower/Paint applies to all of it';
+  rebuild();
+}
+function vecGroupCells() {   // the group's cells, sub-cells bundled by parent, for the group-apply tools below
+  const byCell = new Map();
+  for (const {x,y} of vecGroup.whole) byCell.set(x+','+y, {x, y, whole:true});
+  for (const [key, subs] of vecSubByCell(vecGroup.sub)) {
+    const [x,y] = key.split(',').map(Number);
+    if (!byCell.has(key)) byCell.set(key, {x, y, whole:false, subs});
+  }
+  return [...byCell.values()];
+}
+const VEC_GROUP_TOOLS = new Set(['terrain','ceil','paint','wpaint']);
+function applyToVecGroup() {
+  if (!vecGroup) return;
+  if (tool === 'ceil' && ceilDir === 'lower' && $('sky').value) {
+    $('stMsg').textContent = '⚠ Lowering the ceiling has no effect on Sky levels — set Sky to Indoors first.';
+    return;
+  }
+  checkpoint();
+  const maxH = Math.min(HMAX, ceilUnits());
+  for (const cell of vecGroupCells()) {
+    const c = grid[gi(cell.x, cell.y)];
+    if (c.wall || c.door || c.exit) continue;
+    if (tool === 'terrain') {
+      const delta = (terraDir==='raise'?1:-1) * (terraStep/HU);
+      if (cell.whole) {
+        if (c.sh) { c.sh = c.sh.map(v => Math.max(0, Math.min(maxH, v+delta))); collapseSh(c); }
+        else c.h = Math.max(0, Math.min(maxH, c.h + delta));
+      } else {
+        if (!c.sh) c.sh = Array(16).fill(c.h);
+        for (const s of cell.subs) { const i = sidx(s.sxi,s.syi); c.sh[i] = Math.max(0, Math.min(maxH, c.sh[i]+delta)); }
+        collapseSh(c);
+      }
+    } else if (tool === 'ceil') {
+      const delta = (ceilDir==='lower'?1:-1) * (ceilStep/HU);
+      if (cell.whole) {
+        if (c.sch) {
+          c.sch = c.sch.map((v,i2) => { const sxi2=i2%SUBN, syi2=Math.floor(i2/SUBN); const md=Math.max(0, ceilUnits()-subFloorH(c,sxi2,syi2)); return Math.max(0, Math.min(md, v+delta)); });
+          collapseSch(c);
+        } else {
+          const md = Math.max(0, ceilUnits() - c.h);
+          c.ch = Math.max(0, Math.min(md, (c.ch||0) + delta));
+        }
+      } else {
+        if (!c.sch) c.sch = Array(16).fill(c.ch||0);
+        for (const s of cell.subs) { const i = sidx(s.sxi,s.syi); const md = Math.max(0, ceilUnits()-subFloorH(c,s.sxi,s.syi)); c.sch[i] = Math.max(0, Math.min(md, c.sch[i]+delta)); }
+        collapseSch(c);
+      }
+    } else if (tool === 'paint') {
+      if (cell.whole) { c.surf = paintSurf; c.ssurf = null; }
+      else {
+        // boundary cell: only the sub-cells that are actually part of the group get repainted,
+        // same "don't bleed into the rest of the cell" rule as applyVectorGroup() itself
+        if (!c.ssurf) c.ssurf = Array(16).fill(c.surf);
+        for (const s of cell.subs) c.ssurf[sidx(s.sxi,s.syi)] = paintSurf;
+        collapseSsurf(c);
+      }
+    }
+    else if (tool === 'wpaint') { c.wmat = paintWall; }
+  }
+  $('stMsg').textContent = 'applied to the selected block';
+  rebuild();
+}
 SURFS.forEach(([label], i) => {
   if (i === TELE_IDX || i === ARRIVE_IDX) return;   // teleporters are placed as objects now
   $('surfSel').add(new Option(label, i));
 });
+SURFS.forEach(([label], i) => {
+  if (i === TELE_IDX || i === ARRIVE_IDX) return;
+  $('vecSurfSel').add(new Option(label, i));
+});
+$('vecHMinus').onclick = () => { vecH = Math.max(0, vecH - 16); $('vecHLbl').textContent = vecH; };
+$('vecHPlus').onclick = () => { vecH = Math.min(HMAX*HU, vecH + 16); $('vecHLbl').textContent = vecH; };
+$('vecSurfSel').onchange = () => { vecSurf = +$('vecSurfSel').value; };
+$('vecApply').onclick = () => applyVectorGroup();
+$('vecCancel').onclick = () => {
+  vecPoints = []; vecRaster = null;
+  $('optVectorConfirm').classList.add('hidden');
+  updateVecPreview();
+  $('stMsg').textContent = 'vector shape discarded';
+};
+$('vecCloseBtn').onclick = () => closeVectorLoop();
+$('vecUndoBtn').onclick = () => { vecPoints.pop(); updateVecPreview(); };
 WALLMATS.forEach(([label], i) => $('wallSel').add(new Option(label, i)));
 CEILMATS.forEach(([label], i) => $('ceilSel').add(new Option(label, i)));
 const BASE_WALLS = 9;   // plain materials only — murals are for painting, not the boundary
@@ -436,6 +650,11 @@ document.querySelectorAll('.tool').forEach(b => b.onclick = () => {
   tool = b.dataset.tool;
   if (b.dataset.dir) { if (tool === 'ceil') ceilDir = b.dataset.dir; else terraDir = b.dataset.dir; }
   if (b.dataset.stampmode) stampMode = b.dataset.stampmode;
+  if (tool !== 'vector' && (vecPoints.length || vecRaster)) {   // switching away abandons an in-progress draw
+    vecPoints = []; vecRaster = null;
+    $('optVectorConfirm').classList.add('hidden');
+    updateVecPreview();
+  }
   syncTools();
 });
 $('stepMinus').onclick = () => { terraStep = Math.max(16, terraStep - 16); $('stepLbl').textContent = terraStep; syncTools(); };
@@ -474,6 +693,7 @@ function syncTools() {
   $('optStamp').classList.toggle('hidden', tool !== 'stamp');
   $('optStampSize').classList.toggle('hidden', stampMode !== 'copy');
   $('stampInfo').textContent = stampBuffer ? stampBuffer.w + '×' + stampBuffer.h + ' cells ready to paste' : 'nothing copied yet';
+  $('optVector').classList.toggle('hidden', tool !== 'vector');
   $('surfChip').style.background = SURFS[paintSurf][2];
   $('wallChip').style.background = WALLMATS[paintWall][2];
   $('ceilChip').style.background = CEILMATS[paintCeil][2];
@@ -492,7 +712,10 @@ function syncTools() {
     : tool === 'stamp' ? 'stamp: ' + stampMode + (stampMode === 'paste'
         ? (stampBuffer ? ' — click to place the ' + stampBuffer.w + '×' + stampBuffer.h + ' stamp' : ' — copy something first')
         : ' — click to copy ' + stampW + '×' + stampH + ' (or drag for a custom rectangle)')
+    : tool === 'vector' ? (vecRaster ? 'vector select: set height/texture in the sidebar, then Apply'
+        : 'vector select: click points · after 3, click the bigger start dot (or Enter) to close · Backspace undo · Esc cancel')
     : 'tool: ' + tool;
+  if (vecGroup && VEC_GROUP_TOOLS.has(tool)) $('stTool').textContent += ' · block selected — click applies to the whole block';
 }
 $('helpClose').onclick = () => $('help').classList.add('hidden');
 $('btnHelp').onclick = () => $('help').classList.toggle('hidden');
@@ -596,15 +819,38 @@ $('gw').onchange = () => resizeGrid(+$('gw').value, D);
 $('gd').onchange = () => resizeGrid(W, +$('gd').value);
 const PAN_KEYS = { ArrowUp:[0,-1], w:[0,-1], ArrowDown:[0,1], s:[0,1],
                    ArrowLeft:[-1,0], a:[-1,0], ArrowRight:[1,0], d:[1,0] };
+// tool hotkeys: number row = primary tool, Shift+number = its Fill variant (where it has one).
+// Keyed by e.code (not e.key) so Shift+digit still reads as the digit on every keyboard layout.
+// WASD/Arrows (panning) and Space (Select/Move) stay untouched.
+const TOOL_KEYS = { Digit1:'terrain', Digit2:'ceil', Digit3:'cpaint', Digit4:'erase', Digit5:'wall',
+                     Digit6:'door', Digit7:'exit', Digit8:'paint', Digit9:'wpaint', Digit0:'thing' };
+const TOOL_KEYS_SHIFT = { Digit3:'fillceil', Digit8:'fillfloor', Digit9:'fillwall' };
 window.addEventListener('keydown', e => {
   if ((e.metaKey||e.ctrlKey) && e.key==='z') { undo(); e.preventDefault(); return; }
   if (e.key==='Escape') {
     if (walk.on) { if (!document.pointerLockElement) exitWalk(); return; }
+    if (vecPoints.length) {   // cancel an in-progress vector draw first
+      vecPoints = []; vecRaster = null; $('optVectorConfirm').classList.add('hidden');
+      updateVecPreview(); $('stMsg').textContent = 'vector draw cancelled'; return;
+    }
+    if (vecGroup) { vecGroup = null; updateVecHighlight(); $('stMsg').textContent = 'block selection cleared'; return; }
     selCell = null; refreshInfo(); return;
   }
   if (e.target.tagName==='INPUT' || e.target.tagName==='SELECT') return;
   if (e.key===' ' && !walk.on) {   // quick-switch to Select/Move (Space means something else in Walk)
     tool = 'select'; syncTools(); e.preventDefault(); return;
+  }
+  if (tool === 'vector' && vecPoints.length && !walk.on) {
+    if (e.key === 'Backspace') { vecPoints.pop(); updateVecPreview(); e.preventDefault(); return; }
+    if (e.key === 'Enter') { closeVectorLoop(); e.preventDefault(); return; }
+  }
+  if (!walk.on && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    const t = e.shiftKey ? TOOL_KEYS_SHIFT[e.code] : TOOL_KEYS[e.code];
+    if (t) { tool = t; syncTools(); e.preventDefault(); return; }
+    if (!e.shiftKey && e.code === 'KeyR') { tool = 'rotate'; syncTools(); e.preventDefault(); return; }
+    if (!e.shiftKey && e.code === 'KeyC') { tool = 'stamp'; stampMode = 'copy'; syncTools(); e.preventDefault(); return; }
+    if (!e.shiftKey && e.code === 'KeyV') { tool = 'stamp'; stampMode = 'paste'; syncTools(); e.preventDefault(); return; }
+    if (!e.shiftKey && e.code === 'KeyP') { tool = 'vector'; syncTools(); e.preventDefault(); return; }
   }
   const pk = PAN_KEYS[e.key];
   if (pk && gl.ready && !walk.on) {           // pan the view relative to camera heading
@@ -701,7 +947,7 @@ function applyTool(x, y, sxi, syi, skipCheckpoint) {
   else if (tool==='wall') { c.wall=true; c.door=c.exit=false; c.thing=0; }
   else if (tool==='door') { c.door=true; c.wall=c.exit=false; c.thing=0; c.lock=doorLock; }
   else if (tool==='exit') { c.exit=true; c.wall=c.door=false; c.thing=0; }
-  else if (tool==='paint') { c.surf = paintSurf; }
+  else if (tool==='paint') { c.surf = paintSurf; c.ssurf = null; }   // whole-cell paint always wins outright, clearing any Vector Select split-texture
   else if (tool==='wpaint') { c.wmat = paintWall; }
   else if (tool==='cpaint') { c.cmat = paintCeil; }
   else if (tool==='fillfloor') { floodFill(x, y, 'floor'); }
@@ -747,12 +993,12 @@ function floodFill(x0, y0, mode) {
     apply = c => c.cmat = paintCeil;
   } else {
     if (solid(start) || start.door) return;
-    if (start.surf === paintSurf) return;
+    if (start.surf === paintSurf && !start.ssurf) return;
     const s0 = start.surf, h0 = start.h;
-    // quarter-sculpted cells (sh) don't have one uniform height, so they never match —
-    // fill simply stops there, same as at a wall or door.
-    match = c => !solid(c) && !c.door && !c.sh && c.surf === s0 && c.h === h0;
-    apply = c => c.surf = paintSurf;
+    // quarter-sculpted cells (sh/ssurf) don't have one uniform height/texture, so they never
+    // match — fill simply stops there, same as at a wall or door.
+    match = c => !solid(c) && !c.door && !c.sh && !c.ssurf && c.surf === s0 && c.h === h0;
+    apply = c => { c.surf = paintSurf; c.ssurf = null; };   // whole-cell fill always wins outright
   }
   const seen = new Set([gi(x0,y0)]);
   const q = [[x0,y0]];
@@ -836,12 +1082,15 @@ function compile() {
   for (let y=0;y<D;y++) for (let x=0;x<W;x++) {
     const c = grid[gi(x,y)];
     if (c.wall || c.exit || c.door) continue;
-    const s = SURFS[c.surf];
     const tp = isTp(c.thing);   // teleporter object: its cell becomes a GATE pad sector
-    const floort = tp ? 'GATE' + (c.thing - TP_MIN + 1) : s[1];
     const ceilt = sky ? 'F_SKY1' : CEILMATS[c.cmat||0][1];
-    const special = tp ? 0 : s[3];
     for (let syi=0; syi<SUBN; syi++) for (let sxi=0; sxi<SUBN; sxi++) {
+      // surf (floor texture) is looked up per sub-cell, not once for the whole parent cell —
+      // a Vector Select shape that only partly covers a cell (c.ssurf) needs its texture to
+      // stop exactly at the shape's edge instead of bleeding across the rest of the cell.
+      const s = SURFS[subSurf(c,sxi,syi)];
+      const floort = tp ? 'GATE' + (c.thing - TP_MIN + 1) : s[1];
+      const special = tp ? 0 : s[3];
       const fh = Math.min(subFloorH(c,sxi,syi)*HU, ceil);
       const sx = x*SUBN+sxi, sy = y*SUBN+syi;
       props[sgi(sx,sy)] = { floorh: fh, ceilh: Math.max(fh, ceil - subCeilCh(c,sxi,syi)*HU),
@@ -1566,11 +1815,17 @@ function rebuild() {
       sideKey = 'W|'+wm[1]+'|'+shade(wm[2], 0.62);
     }
     const X0=x*CS, X1=(x+1)*CS, Y0=y*CS, Y1=(y+1)*CS;
-    if (!isStruct && c.sh) {
-      // ¼×¼-sculpted floor: 16 quarter-cell quads instead of one whole-cell quad
+    if (!isStruct && (c.sh || c.ssurf)) {
+      // ¼×¼-sculpted floor: 16 quarter-cell quads instead of one whole-cell quad. Texture is
+      // also looked up per sub-cell (subSurf) rather than reusing the whole-cell topKey, so a
+      // Vector Select shape that only partly covers this cell (c.ssurf) renders its texture
+      // stopping exactly at the shape's edge instead of covering the whole cell.
       for (let syi=0; syi<SUBN; syi++) for (let sxi=0; sxi<SUBN; sxi++) {
         const subTop = Math.min(subFloorH(c,sxi,syi)*HU, ceil);
-        quadY(topKey, X0+sxi*SS, Y0+syi*SS, X0+(sxi+1)*SS, Y0+(syi+1)*SS, subTop + 0.01);
+        const si = subSurf(c, sxi, syi);
+        const subFlat = isTp(c.thing) ? 'GATE' + (c.thing - TP_MIN + 1) : SURFS[si][1];
+        const subFcol = isTp(c.thing) ? '#8f7fd4' : SURFS[si][2];
+        quadY('F|'+subFlat+'|'+subFcol, X0+sxi*SS, Y0+syi*SS, X0+(sxi+1)*SS, Y0+(syi+1)*SS, subTop + 0.01);
       }
     } else {
       quadY(topKey, X0, Y0, X1, Y1, top + (isStruct?0:0.01));
@@ -1952,6 +2207,7 @@ function rebuild() {
     gl.thingGroup.add(ring);
   }
   gl.scene.add(gl.thingGroup);
+  updateVecHighlight();
 }
 // recognizable marker shapes per thing category, roughly to Doom scale
 function thingMesh(t, color, avail) {
@@ -2166,6 +2422,10 @@ function bindMouse(cv) {
   });
   window.addEventListener('mousemove', e => {
     if (walk.on) return;
+    if (tool === 'vector' && !down && vecPoints.length) {
+      const wp = pickWorld(e, cv);
+      updateVecRubber(wp);
+    }
     const cell = pick(e, cv);
     if (cell && (!down || down.painting)) {
       showToolGhost(cell);
@@ -2256,6 +2516,12 @@ function bindMouse(cv) {
     }
     if (!wasClick || shift) return;
     if (btn === 0) {
+      if (tool === 'vector') { handleVectorClick(e, cv); return; }
+      if (vecGroup && VEC_GROUP_TOOLS.has(tool)) {   // a block is selected — this click restyles the whole thing
+        if (!pick(e, cv)) return;
+        applyToVecGroup();
+        return;
+      }
       if (tool === 'stamp') {   // Stamp always acts on the cell, even if a thing sits on it —
         const cell = pick(e, cv);              // checked first so clicking on/near a monster
         if (!cell) return;                     // or item doesn't get hijacked into selecting it
@@ -2314,6 +2580,117 @@ function pick(e, cv) {
   const sxi = Math.max(0, Math.min(SUBN-1, Math.floor((p.x - cx*CS)/SS)));
   const syi = Math.max(0, Math.min(SUBN-1, Math.floor((-p.z - cy*CS)/SS)));
   return {x:cx, y:cy, sxi, syi};
+}
+// raw continuous world hit point, no cell/sub-cell flooring — Vector Select places polygon
+// vertices at true click precision; only the final rasterize step snaps to the sub-cell grid.
+function pickWorld(e, cv) {
+  if (!gl.ready || !gl.world) return null;
+  const r = cv.getBoundingClientRect();
+  const nx = ((e.clientX-r.left)/r.width)*2-1, ny = -((e.clientY-r.top)/r.height)*2+1;
+  if (nx<-1||nx>1||ny<-1||ny>1) return null;
+  gl.ray.setFromCamera({x:nx,y:ny}, gl.camera);
+  const hits = gl.ray.intersectObjects([gl.world, gl.ground], true);
+  if (!hits.length) return null;
+  const p = hits[0].point;
+  return { wx: p.x, wy: -p.z };
+}
+// screen-space pixel position of a world point, using the same projection the renderer uses —
+// distance checks against a click need this instead of world-unit distance, since world units
+// per screen pixel varies enormously with zoom (at the default camera distance, the old
+// world-unit-radius check worked out to only ~7 screen pixels, which was nearly unclickable)
+function worldToScreen(wx, wy, wz, cv) {
+  const v = new THREE.Vector3(wx, wy, wz).project(gl.camera);
+  const r = cv.getBoundingClientRect();
+  return { x: (v.x*0.5+0.5)*r.width + r.left, y: (-v.y*0.5+0.5)*r.height + r.top };
+}
+const VEC_CLOSE_PX = 18;   // click-to-close target radius, in screen pixels, regardless of zoom
+function handleVectorClick(e, cv) {
+  const p = pickWorld(e, cv);
+  if (!p) return;
+  if (!vecPoints.length && vecGroup) { vecGroup = null; updateVecHighlight(); }   // starting fresh drops the old block
+  if (vecPoints.length >= 3) {
+    const start = vecPoints[0];
+    const sp = worldToScreen(start.wx, 6, -start.wy, cv);
+    const dPx = Math.hypot(e.clientX - sp.x, e.clientY - sp.y);
+    if (dPx < VEC_CLOSE_PX) { closeVectorLoop(); return; }   // close enough on screen — close the loop
+  }
+  vecPoints.push(p);
+  updateVecPreview();
+  $('stMsg').textContent = 'point ' + vecPoints.length + ' placed — click the larger start dot to close, or Enter';
+}
+// live 3D preview while drawing: the placed-point polyline + vertex dots (updateVecPreview),
+// and a dashed rubber-band from the last point to the cursor (updateVecRubber)
+function updateVecPreview() {
+  if (!gl.ready) return;
+  if (gl.vecLine) { gl.scene.remove(gl.vecLine); gl.vecLine.geometry.dispose(); gl.vecLine = null; }
+  if (gl.vecDots) gl.scene.remove(gl.vecDots);
+  gl.vecDots = new THREE.Group();
+  const y = 6;
+  if (vecPoints.length > 1) {
+    const pts = vecPoints.map(p => new THREE.Vector3(p.wx, y, -p.wy));
+    gl.vecLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
+      new THREE.LineBasicMaterial({ color: 0xffd24a }));
+    gl.scene.add(gl.vecLine);
+  }
+  vecPoints.forEach((p, i) => {
+    // once there are enough points to close the loop, the start dot is drawn larger — it's the
+    // actual click target now, so it needs to read as one instead of looking identical to the rest
+    const isCloseTarget = i === 0 && vecPoints.length >= 3;
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(isCloseTarget ? 7 : 3, 10, 10),
+      new THREE.MeshBasicMaterial({ color: 0xffd24a }));
+    dot.position.set(p.wx, y, -p.wy);
+    gl.vecDots.add(dot);
+  });
+  gl.scene.add(gl.vecDots);
+  if (!vecPoints.length && gl.vecRubber) gl.vecRubber.visible = false;
+  // guaranteed-reliable fallback for closing/undoing — never depends on click precision,
+  // shape size, or camera angle the way the in-scene click targets do
+  $('vecCloseBtn').classList.toggle('hidden', vecPoints.length < 3);
+  $('vecUndoBtn').classList.toggle('hidden', vecPoints.length < 1);
+}
+function updateVecRubber(wp) {
+  if (!gl.ready) return;
+  if (!gl.vecRubber) {
+    gl.vecRubber = new THREE.Line(new THREE.BufferGeometry(),
+      new THREE.LineDashedMaterial({ color: 0xffd24a, dashSize: 8, gapSize: 6 }));
+    gl.scene.add(gl.vecRubber);
+  }
+  if (!wp || !vecPoints.length) { gl.vecRubber.visible = false; return; }
+  const last = vecPoints[vecPoints.length-1], y = 6;
+  gl.vecRubber.geometry.dispose();
+  gl.vecRubber.geometry = new THREE.BufferGeometry().setFromPoints(
+    [new THREE.Vector3(last.wx, y, -last.wy), new THREE.Vector3(wp.wx, y, -wp.wy)]);
+  gl.vecRubber.computeLineDistances();
+  gl.vecRubber.visible = true;
+}
+// persistent yellow highlight for the current selected block (vecGroup), matching the
+// Select/Move marker color — refreshed by rebuild() and whenever the group changes
+function updateVecHighlight() {
+  if (!gl.ready) return;
+  if (gl.vecHighlight) gl.scene.remove(gl.vecHighlight);
+  gl.vecHighlight = new THREE.Group();
+  if (vecGroup) {
+    const ceil = ceilUnits()*HU;
+    const mat = new THREE.MeshBasicMaterial({ color:0xffd24a, transparent:true, opacity:0.35, depthWrite:false });
+    for (const {x,y} of vecGroup.whole) {
+      const c = grid[gi(x,y)];
+      const box = new THREE.Mesh(new THREE.BoxGeometry(CS, 4, CS), mat);
+      box.position.set(x*CS+CS/2, colTop(c, ceil)+3, -(y*CS+CS/2));
+      gl.vecHighlight.add(box);
+    }
+    for (const [key, subs] of vecSubByCell(vecGroup.sub)) {
+      const [x,y] = key.split(',').map(Number);
+      const c = grid[gi(x,y)];
+      for (const s of subs) {
+        const top = (c.wall||c.exit||c.door) ? ceil : subFloorH(c, s.sxi, s.syi)*HU;
+        const wx = x*CS + s.sxi*SS + SS/2, wy = y*CS + s.syi*SS + SS/2;
+        const box = new THREE.Mesh(new THREE.BoxGeometry(SS, 4, SS), mat);
+        box.position.set(wx, top+3, -wy);
+        gl.vecHighlight.add(box);
+      }
+    }
+  }
+  gl.scene.add(gl.vecHighlight);
 }
 
 // ================= walk mode: first-person preview =================

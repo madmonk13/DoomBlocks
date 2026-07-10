@@ -17,6 +17,7 @@ const dom = new JSDOM(html, {
     w.HTMLCanvasElement.prototype.getContext = () => p;
     w.confirm = () => true;
     w.URL.createObjectURL = () => 'x'; w.URL.revokeObjectURL = () => {};
+    w.Element.prototype.scrollIntoView = () => {};   // jsdom doesn't implement layout/scrolling
   }
 });
 const w = dom.window;
@@ -299,6 +300,68 @@ ok(w.eval('grid[gi(2,25)].thing') === 1, 'the surviving start is the one the pas
 // clean up this scratch area so it doesn't affect anything reusing this grid afterward
 w.eval(`
   for (let y=24;y<=26;y++) for (let x=0;x<=27;x++) grid[gi(x,y)] = newCol();
+  window.__m = compile();
+`);
+
+// ---- vector select: click-drawn polygon rasterizes onto the sub-cell grid, then behaves as
+// a persistent "grabbed" selection for Terrain/Ceiling/Paint ----
+const raster = JSON.parse(w.eval(`
+  JSON.stringify(rasterizePolygon([
+    {wx: 1*64+0.5, wy: 28*64},
+    {wx: 1*64+0.5, wy: 31*64},
+    {wx: 4*64+0.5, wy: 31*64}
+  ]))
+`));
+ok(raster.whole.length === 3 && raster.sub.length === 41,
+  'vector rasterize: a right triangle covers 3 full cells + 41 boundary sub-cells: ' + JSON.stringify({whole:raster.whole.length, sub:raster.sub.length}));
+w.eval(`
+  tool = 'vector';
+  vecPoints = [ {wx:1*64+0.5,wy:28*64}, {wx:1*64+0.5,wy:31*64}, {wx:4*64+0.5,wy:31*64} ];
+  closeVectorLoop();
+  vecH = 48; vecSurf = 2;
+  applyVectorGroup();
+`);
+ok(w.eval('grid[gi(1,29)].h') === 3 && w.eval('grid[gi(1,29)].surf') === 2,
+  'vector apply: a fully-covered cell is raised to the target height and painted');
+ok(w.eval('grid[gi(1,28)].sh') !== null && w.eval('grid[gi(1,28)].sh[sidx(0,0)]') === 3 && w.eval('grid[gi(1,28)].sh[sidx(3,0)]') === 0,
+  'vector apply: a boundary cell only sculpts the sub-cells inside the shape');
+// same boundary cell (1,28): the covered sub-cells should paint the new texture (Wood), while
+// the uncovered remainder of the cell keeps its original texture (Tech) instead of being
+// overwritten too — this is the fix for "texture bleeds across the whole partial cell"
+ok(w.eval('grid[gi(1,28)].ssurf') !== null,
+  'vector apply: a boundary cell gets a per-sub-cell texture split (ssurf), not a uniform surf');
+ok(w.eval('subSurf(grid[gi(1,28)], 0, 0)') === 2 && w.eval('subSurf(grid[gi(1,28)], 3, 0)') === 0,
+  'vector apply: subSurf reports the new texture only on covered sub-cells, background elsewhere');
+ok(w.eval('grid[gi(1,28)].surf') === 0,
+  "vector apply: the boundary cell's whole-cell surf field is untouched (still the original background texture)");
+// compile() should still succeed and produce two distinct floor sectors (Wood + Tech) for this
+// one boundary cell, proving the split survives all the way to the compiled map
+const splitMap = JSON.parse(w.eval('JSON.stringify(compile())'));
+const hasWoodFloor = splitMap.sectors.some(s => s.floort === 'FLAT5_1' && s.floorh === 48);
+const hasTechFloor = splitMap.sectors.some(s => s.floort === 'FLOOR4_8' && s.floorh === 0);
+ok(hasWoodFloor && hasTechFloor,
+  'vector apply: compiled map has both the new (Wood/48) and background (Tech/0) floor sectors');
+ok(w.eval('vecGroup.whole.length') === 3 && w.eval('vecGroup.sub.length') === 41,
+  'vector apply: the rasterized set is retained as the active group');
+w.eval(`grid[gi(29,29)].h = 5; tool='terrain'; terraDir='raise'; terraStep=16; applyToVecGroup();`);
+ok(w.eval('grid[gi(1,29)].h') === 4, 'group-apply: Raise bumps every cell in the group by one step');
+ok(w.eval('grid[gi(29,29)].h') === 5, 'group-apply: cells outside the group are untouched');
+// group-apply Paint on the persistent selection: the boundary cell (1,28) should only repaint
+// its covered sub-cells (same rule as the initial Apply), not bleed across the whole cell
+w.eval(`paintSurf = 3; tool = 'paint'; applyToVecGroup();`);
+ok(w.eval('subSurf(grid[gi(1,28)], 0, 0)') === 3 && w.eval('subSurf(grid[gi(1,28)], 3, 0)') === 0,
+  'group-apply Paint: repaints only the covered sub-cells of a boundary cell, background untouched');
+ok(w.eval('grid[gi(1,29)].surf') === 3 && w.eval('grid[gi(1,29)].ssurf') === null,
+  'group-apply Paint: a fully-covered whole cell is repainted uniformly');
+// regular whole-cell Paint tool always wins outright and clears any Vector Select texture split
+w.eval(`paintSurf = 4; tool = 'paint'; applyTool(1, 28);`);
+ok(w.eval('grid[gi(1,28)].surf') === 4 && w.eval('grid[gi(1,28)].ssurf') === null,
+  'regular Paint tool overwrites a split-texture cell uniformly and clears ssurf');
+w.eval(`vecGroup = null;`);   // clear the selection so it can't leak into anything reusing this grid
+// clean up this scratch area too
+w.eval(`
+  for (let y=28;y<=31;y++) for (let x=0;x<=5;x++) grid[gi(x,y)] = newCol();
+  grid[gi(29,29)] = newCol();
   window.__m = compile();
 `);
 

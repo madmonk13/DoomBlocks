@@ -38,6 +38,13 @@ support **drag-to-paint**: hold the left mouse button and drag to apply the tool
 the cursor crosses, instead of clicking one at a time. The whole stroke is a single Undo step.
 Right-drag still orbits the camera as usual, so building and navigating never conflict.
 
+**Hotkeys** (editor mode only — WASD/arrows stay reserved for panning, Space for Select/Move):
+**1** Terrain · **2** Ceiling · **3** Ceiling paint (**Shift+3** Fill) · **4** Erase column ·
+**5** Wall · **6** Door · **7** Exit switch · **8** Floor paint (**Shift+8** Fill) ·
+**9** Wall paint (**Shift+9** Fill) · **0** Place Object · **R** Rotate Object · **C** Stamp Copy ·
+**V** Stamp Paste · **P** Vector Select. Each key switches to that tool keeping its current
+settings (direction, step, brush, paint color); it doesn't change them.
+
 - **Select/Move** (or press **Space** to jump to it from any other tool) — click any placed
   thing to inspect it (name, category, facing, footprint).
   The info box offers Rotate 45° and Delete. In this mode, drag a thing to move it to another
@@ -121,6 +128,25 @@ Right-drag still orbits the camera as usual, so building and navigating never co
   contains a Player 1 Start, pasting it moves the level's start there and clears any other one (a
   level can only have one). Pastes (and copies) that overhang the map edge are simply clipped to
   fit.
+- **Vector Select** — click points to outline any shape (a triangular dais, an angled platform,
+  whatever the room needs). After the 3rd point, the start point grows into a bigger dot — click
+  it (or press Enter, or the sidebar's **Close Loop** button) to close the loop; the click target
+  is a fixed screen-pixel radius, so it's just as easy to hit whether you're zoomed in or out. The
+  sidebar also has an **Undo Point** button alongside **Backspace**, for closing/undoing without
+  depending on click precision at all. **Esc** cancels the draw. Closing the loop rasterizes it
+  onto the same 16-unit sub-cell grid the ¼×¼ brush uses — cells fully inside the outline are
+  raised as whole cells, cells the outline only partly covers get sub-cell sculpting, so a
+  diagonal edge comes out as a fine staircase rather than a smooth line (the same trade-off as
+  ¼×¼ terrain, just traced automatically instead of painted by hand). Set a height and floor
+  texture in the sidebar and click **Apply** — the shape becomes ordinary cells and sub-cells
+  under the hood, so it exports exactly like hand-painted terrain, no special handling needed. On
+  a boundary cell the outline only partly covers, the new texture is painted only on the sub-cells
+  actually inside the shape — the rest of that cell keeps its original floor texture instead of
+  getting overwritten too. After applying, the shape stays selected as a block (highlighted yellow, the same color
+  Select/Move uses): the next click with **Terrain**, **Ceiling**, **Floor paint**, or **Wall
+  paint** applies to the *whole block* at once instead of a single cell, wherever on the map you
+  click. Press **Esc** to clear the selection (or start a new Vector Select draw, which replaces
+  it). Cells that are already a wall, door, or exit are skipped rather than overwritten.
 
 ## Teleporters
 
