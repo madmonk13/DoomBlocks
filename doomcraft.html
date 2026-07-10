@@ -1,0 +1,2234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Doomcraft — First-Person Block Editor</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+  :root {
+    --bg:#1a1a1e; --panel:#242429; --border:#3a3a42; --text:#d8d8dc;
+    --dim:#8a8a92; --accent:#e05038; --sel:#ffd24a;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--bg); color:var(--text); font:13px/1.4 -apple-system,'Helvetica Neue',sans-serif; overflow:hidden; height:100vh; }
+  button, select, input { background:#2e2e35; color:var(--text); border:1px solid var(--border); border-radius:5px; padding:5px 10px; font:inherit; cursor:pointer; }
+  button:hover { background:#3a3a44; }
+  button.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+  #canvasWrap { position:absolute; inset:0; overflow:hidden; }
+  canvas { display:block; }
+  .hidden { display:none !important; }
+  .row { display:flex; align-items:center; gap:6px; margin-bottom:6px; }
+  .row label { flex:0 0 90px; color:var(--dim); font-size:12px; }
+  .row input, .row select { flex:1; min-width:0; padding:4px 6px; }
+  #noGL { position:absolute; inset:0; display:none; align-items:center; justify-content:center; color:var(--dim); text-align:center; padding:40px; background:var(--bg); z-index:50; }
+  /* crosshair */
+  #crosshair { position:absolute; top:50%; left:50%; width:18px; height:18px; margin:-9px 0 0 -9px; pointer-events:none; z-index:10; }
+  #crosshair::before, #crosshair::after { content:''; position:absolute; background:rgba(255,255,255,.85); box-shadow:0 0 2px rgba(0,0,0,.8); }
+  #crosshair::before { left:8px; top:0; width:2px; height:18px; }
+  #crosshair::after { top:8px; left:0; width:18px; height:2px; }
+  /* hotbar */
+  #hotbar { position:absolute; left:50%; bottom:14px; transform:translateX(-50%); display:flex; gap:4px; z-index:10; }
+  .slot { width:56px; height:56px; background:rgba(30,30,35,.85); border:2px solid var(--border); border-radius:6px; display:flex; flex-direction:column; align-items:center; justify-content:center; cursor:pointer; padding:2px; }
+  .slot .k { font-size:10px; color:var(--dim); }
+  .slot .n { font-size:10px; color:var(--text); text-align:center; line-height:1.15; margin-top:2px; }
+  .slot .chip { width:14px; height:14px; border-radius:3px; margin-top:2px; border:1px solid rgba(255,255,255,.25); }
+  .slot.active { border-color:var(--sel); background:rgba(255,210,74,.16); }
+  /* floating material picker, shown above the hotbar for the equipped tool */
+  #toolPanel { position:absolute; left:50%; bottom:80px; transform:translateX(-50%); width:220px; background:rgba(30,30,35,.92); border:1px solid var(--border); border-radius:8px; padding:8px; z-index:10; }
+  /* HUD readouts */
+  #dcTool { position:absolute; left:50%; bottom:140px; transform:translateX(-50%); color:var(--dim); font-size:12px; text-shadow:0 1px 2px rgba(0,0,0,.8); z-index:10; pointer-events:none; }
+  #dcMsg { position:absolute; left:50%; top:16px; transform:translateX(-50%); color:var(--text); font-size:13px; text-shadow:0 1px 2px rgba(0,0,0,.8); z-index:10; pointer-events:none; background:rgba(30,30,35,.6); padding:4px 12px; border-radius:6px; }
+  #dcHelp { position:absolute; top:10px; right:10px; background:rgba(30,30,35,.92); border:1px solid var(--border); border-radius:8px; padding:12px 16px; font-size:12px; color:var(--dim); max-width:230px; max-height:calc(100% - 20px); overflow-y:auto; pointer-events:none; z-index:10; }
+  #dcHelp b { color:var(--text); }
+  /* escape / start menu */
+  #escMenu { position:absolute; inset:0; background:rgba(10,10,12,.82); display:flex; align-items:center; justify-content:center; z-index:100; }
+  #escPanel { width:360px; max-height:88vh; overflow-y:auto; background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:20px; }
+  #escPanel h1 { font-size:18px; color:var(--accent); letter-spacing:1px; margin-bottom:4px; }
+  #escPanel h3 { font-size:11px; text-transform:uppercase; color:var(--dim); margin:16px 0 6px; letter-spacing:.5px; }
+  #escPanel h3:first-of-type { margin-top:12px; }
+  #escPanel .row2 { display:flex; gap:6px; margin-bottom:8px; }
+  #escPanel .row2 button { flex:1; }
+  #playBtn { width:100%; background:var(--accent); border-color:var(--accent); color:#fff; padding:10px; font-size:14px; margin-top:14px; }
+  #escSub { color:var(--dim); font-size:12px; margin-top:2px; }
+</style>
+</head>
+<body>
+<div id="canvasWrap">
+  <canvas id="cv"></canvas>
+  <div id="noGL">The 3D view needs Three.js from the internet.<br>Connect and reload this page.</div>
+  <div id="crosshair"></div>
+  <div id="dcMsg"><span id="stMsg"></span></div>
+  <div id="dcTool"><span id="stTool"></span></div>
+  <span id="stCell" class="hidden"></span>
+  <span id="infoGrid" class="hidden"></span>
+  <span id="infoBlocks" class="hidden"></span>
+  <div id="dcHelp">
+    <b>Doomcraft controls</b><br><br>
+    <b>WASD</b> move · <b>Shift</b> run<br>
+    <b>Mouse</b> look (click to capture)<br>
+    <b>Left click</b> break · <b>Right click</b> place<br>
+    <b>Scroll</b> cycle material<br>
+    <b>1–9, 0</b> hotbar slot<br>
+    <b>R</b> rotate object at crosshair<br>
+    <b>Space / E</b> use door<br>
+    <b>F</b> fly · <b>N</b> noclip<br>
+    <b>Space / C</b> up / down (flying)<br>
+    <b>Ctrl+Z</b> undo · <b>Esc</b> menu
+  </div>
+  <div id="toolPanel" class="hidden">
+    <div id="mpCeil" class="hidden"><select id="ceilSel" style="width:100%"></select></div>
+    <div id="mpWall" class="hidden"><select id="wallSel" style="width:100%"></select></div>
+    <div id="mpDoor" class="hidden">
+      <select id="lockSel" style="width:100%">
+        <option value="0">No lock (ordinary door)</option>
+        <option value="1">Blue key required</option>
+        <option value="2">Yellow key required</option>
+        <option value="3">Red key required</option>
+      </select>
+    </div>
+    <div id="mpFloor" class="hidden"><select id="surfSel" style="width:100%"></select></div>
+    <div id="mpThing" class="hidden">
+      <select id="catSel" style="width:100%"></select>
+      <select id="thingSel" style="width:100%;margin-top:4px"></select>
+    </div>
+  </div>
+  <div id="hotbar">
+    <div class="slot" data-tool="terrain" title="Sculpt floor height (16-unit steps) · 1"><span class="k">1</span><span class="chip" style="background:#a5abb1"></span><span class="n">Terrain</span></div>
+    <div class="slot" data-tool="ceil" title="Sculpt ceiling height · 2"><span class="k">2</span><span class="chip" style="background:#7d838f"></span><span class="n">Ceiling</span></div>
+    <div class="slot" data-tool="cpaint" title="Paint ceiling texture · 3"><span class="k">3</span><span class="chip" id="ceilChip"></span><span class="n">Ceil. paint</span></div>
+    <div class="slot" data-tool="erase" title="Reset a cell to open floor · 4"><span class="k">4</span><span class="chip" style="background:#2a2a30"></span><span class="n">Erase</span></div>
+    <div class="slot" data-tool="wall" title="Place a wall (floor to ceiling) · 5"><span class="k">5</span><span class="chip" style="background:#5f6a80"></span><span class="n">Wall</span></div>
+    <div class="slot" data-tool="door" title="Place a door · 6"><span class="k">6</span><span class="chip" id="lockChip" style="background:#c9a13b"></span><span class="n">Door</span></div>
+    <div class="slot" data-tool="exit" title="Place the level exit switch · 7"><span class="k">7</span><span class="chip" style="background:#3fae5a"></span><span class="n">Exit</span></div>
+    <div class="slot" data-tool="paint" title="Paint floor texture · 8"><span class="k">8</span><span class="chip" id="surfChip"></span><span class="n">Floor paint</span></div>
+    <div class="slot" data-tool="wpaint" title="Paint wall texture · 9"><span class="k">9</span><span class="chip" id="wallChip"></span><span class="n">Wall paint</span></div>
+    <div class="slot" data-tool="thing" title="Place an object · 0"><span class="k">0</span><span class="chip" id="thingChip" style="background:#4aa8ff"></span><span class="n">Object</span></div>
+  </div>
+  <div id="escMenu">
+    <div id="escPanel">
+      <h1>DOOMCRAFT</h1>
+      <div id="escSub">First-person block editor · right click to build, left click to break</div>
+      <h3>Level</h3>
+      <input id="lvlName" placeholder="Level name" style="width:100%;margin-bottom:6px" title="Name shown in-game on the automap">
+      <div class="row"><label>Ceiling</label>
+        <input id="ceilH" type="number" value="128" min="64" max="480" step="16"></div>
+      <div class="row"><label>Sky</label>
+        <select id="sky" title="Open-air ceiling and which sky texture to show (Doom II skies)">
+          <option value="">Indoors</option>
+          <option value="SKY1">Sky 1 — brown city</option>
+          <option value="SKY2">Sky 2 — grey city</option>
+          <option value="SKY3">Sky 3 — red hell</option>
+        </select></div>
+      <div class="row"><label>Border</label>
+        <select id="borderSel" title="Texture of the map's outer boundary wall"></select></div>
+      <div class="row"><label>Size</label>
+        <input id="gw" type="number" value="32" min="8" max="64" style="max-width:60px">
+        <span style="color:var(--dim)">×</span>
+        <input id="gd" type="number" value="32" min="8" max="64" style="max-width:60px"></div>
+      <div class="row"><label>WAD slot</label>
+        <select id="mapName"><option>MAP01</option><option>E1M1</option></select></div>
+      <h3>Project</h3>
+      <div class="row2">
+        <button id="btnNew">New</button>
+        <button id="btnSave">Save</button>
+        <button id="btnLoad">Open</button>
+      </div>
+      <input type="file" id="fileInput" accept=".json" class="hidden">
+      <div class="row2">
+        <button id="btnIwad" title="Load doom2.wad or freedoom2.wad to preview real textures & sprites (never uploaded anywhere)">Open IWAD</button>
+        <button id="btnUndo">Undo</button>
+      </div>
+      <input type="file" id="iwadFile" accept=".wad" class="hidden">
+      <button id="btnExport" style="width:100%;background:var(--accent);border-color:var(--accent);color:#fff;margin-top:6px">Export WAD</button>
+      <button id="playBtn">Play ▶</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+// ================= world state =================
+let W = 32, D = 32;                           // grid size (editable)
+const CS = 64, HU = 16;                       // cell size, height unit
+const HMAX = 28;                              // max terrain in height-units (448)
+const SUBN = 4, SS = CS/SUBN;                 // Terrain/Ceiling can also sculpt in 16-unit quarters
+function newCol(){ return { h:0, ch:0, wall:false, door:false, exit:false, surf:0, wmat:0, cmat:0, lock:0, thing:0, tele:0, sh:null, sch:null, ssurf:null }; }
+let grid = Array.from({length:W*D}, newCol);
+let levels = [], cur = 0;                     // multi-level project state
+const gi = (x,y) => y*W + x;
+const inb = (x,y) => x>=0 && x<W && y>=0 && y<D;
+// sub-cell (quarter-cell) floor/ceiling heights: a cell's `sh`/`sch` are either null (uniform —
+// use the plain `h`/`ch` scalar, the common case) or a flat 16-entry array (row-major, index
+// sidx(sxi,syi), sxi/syi each 0..3) overriding height at 16-unit resolution. Only Terrain and
+// Ceiling ever create these; every other tool (walls, doors, paint, things) stays whole-cell.
+const sidx = (sxi,syi) => syi*SUBN+sxi;
+function subFloorH(c, sxi, syi) { return c.sh ? c.sh[sidx(sxi,syi)] : c.h; }
+function subCeilCh(c, sxi, syi) { return c.sch ? c.sch[sidx(sxi,syi)] : (c.ch||0); }
+function collapseSh(c) { if (c.sh && c.sh.every(v => v === c.sh[0])) { c.h = c.sh[0]; c.sh = null; } }
+function collapseSch(c) { if (c.sch && c.sch.every(v => v === c.sch[0])) { c.ch = c.sch[0]; c.sch = null; } }
+// sub-cell floor TEXTURE, same idea as sh/sch above but for `surf` — only Vector Select ever
+// creates these (a boundary cell where the shape covers only some of the 16 sub-cells needs a
+// different texture on the covered part than the untouched remainder). Every other tool that
+// paints floor texture stays whole-cell and clears ssurf back to uniform.
+function subSurf(c, sxi, syi) { return c.ssurf ? c.ssurf[sidx(sxi,syi)] : c.surf; }
+function collapseSsurf(c) { if (c.ssurf && c.ssurf.every(v => v === c.ssurf[0])) { c.surf = c.ssurf[0]; c.ssurf = null; } }
+
+const SURFS = [ // [label, flat, css color, sector special]
+  ['Tech',   'FLOOR4_8', '#878c91', 0],
+  ['Dirt',   'FLOOR7_1', '#8a6f52', 0],
+  ['Wood',   'FLAT5_1',  '#7a5a3a', 0],
+  ['Marble', 'DEM1_5',   '#5a7a62', 0],
+  ['Grass',  'GRASS1',   '#4e7a3e', 0],
+  ['Water',  'FWATER1',  '#3a5f9f', 0],
+  ['Nukage', 'NUKAGE1',  '#4faf3f', 7],
+  ['Lava',   'LAVA1',    '#cf5f2f', 16],
+  ['Blood',  'BLOOD1',   '#9f2f2f', 5],
+  ['Teleport','GATE1',   '#8f7fd4', 0],
+  ['Tele arrival','GATE2','#7f6fc0', 0],
+];
+const THING_CATS = [ // [category label, place-button label, hex color, [[id,name],...]]
+  ['Starts', 'Place start', 0x5fd35f, [
+    [1,'Player 1 Start'],[2,'Player 2 Start'],[3,'Player 3 Start'],[4,'Player 4 Start'],[11,'Deathmatch Start'],
+    [14,'Teleport Landing']]],
+  ['Enemies', 'Place enemy', 0xe05038, [
+    [3004,'Zombieman'],[9,'Shotgun Guy'],[65,'Chaingunner'],[3001,'Imp'],[3002,'Demon'],[58,'Spectre'],
+    [3006,'Lost Soul'],[3005,'Cacodemon'],[69,'Hell Knight'],[3003,'Baron of Hell'],[66,'Revenant'],
+    [67,'Mancubus'],[68,'Arachnotron'],[71,'Pain Elemental'],[64,'Arch-Vile'],[7,'Spiderdemon'],[16,'Cyberdemon'],
+    [84,'Wolfenstein SS']]],
+  ['Weapons & Ammo', 'Place weapon', 0x4aa8ff, [
+    [2001,'Shotgun'],[82,'Super Shotgun'],[2002,'Chaingun'],[2003,'Rocket Launcher'],[2004,'Plasma Rifle'],
+    [2005,'Chainsaw'],[2006,'BFG9000'],[2007,'Clip'],[2048,'Box of Bullets'],[2008,'Shells'],
+    [2049,'Box of Shells'],[2010,'Rocket'],[2046,'Box of Rockets'],[2047,'Cell'],[17,'Cell Pack'],[8,'Backpack']]],
+  ['Pickups', 'Place pickup', 0x9f8fff, [
+    [2011,'Stimpack'],[2012,'Medikit'],[2014,'Health Bonus'],[2015,'Armor Bonus'],[2018,'Green Armor'],
+    [2019,'Blue Armor'],[2013,'Soulsphere'],[83,'Megasphere'],[2022,'Invulnerability'],[2023,'Berserk'],
+    [2024,'Invisibility'],[2025,'Radiation Suit'],[2026,'Computer Map'],[2045,'Light Goggles']]],
+  ['Keys', 'Place key', 0xffd24a, [
+    [5,'Blue Keycard'],[40,'Blue Skull Key'],[6,'Yellow Keycard'],[39,'Yellow Skull Key'],
+    [13,'Red Keycard'],[38,'Red Skull Key']]],
+  ['Decorations', 'Place decoration', 0xb0a080, [
+    [2035,'Exploding Barrel'],[2028,'Floor Lamp'],[34,'Candle'],[35,'Candelabra'],[44,'Tall Blue Torch'],
+    [45,'Tall Green Torch'],[46,'Tall Red Torch'],[48,'Tech Column'],[30,'Tall Green Pillar'],
+    [32,'Tall Red Pillar'],[41,'Evil Eye'],[43,'Burnt Tree'],[54,'Large Brown Tree'],[15,'Dead Marine'],[10,'Gibs'],
+    [25,'Impaled Human'],[26,'Impaled Human (twitching)'],[27,'Skull on a Pole'],
+    [28,'Five Skulls (shish kebab)'],[29,'Pile of Skulls & Candles']]],
+  ['Hanging Gore', 'Place gore', 0xa05060, [
+    [63,'Hanging Victim (twitching)'],[59,'Hanging Victim (arms out)'],[61,'Hanging Victim (one-legged)'],
+    [60,'Hanging Pair of Legs'],[62,'Hanging Leg']]],
+  ['Boss & Special', 'Place special', 0xd07fd0, [
+    [88,'Icon of Sin (boss brain)'],[89,'Boss Spawn Shooter'],[87,'Boss Spawn Spot'],[72,'Commander Keen']]],
+  ['Teleporters', 'Place teleporter', 0x8f7fd4, [
+    [9001,'Teleporter 1'],[9002,'Teleporter 2'],[9003,'Teleporter 3'],[9004,'Teleporter 4']]],
+];
+const THING_TYPES = THING_CATS.flatMap(c => c[3]);            // flat list for name lookups
+const CAT_OF = {}; THING_CATS.forEach((c,i) => c[3].forEach(([id]) => CAT_OF[id] = i));
+const MONSTERS = new Set(THING_CATS[1][3].map(([id]) => id));
+const KEYCOLORS = { 5:0x4a6aff, 40:0x4a6aff, 6:0xffd24a, 39:0xffd24a, 13:0xff4a4a, 38:0xff4a4a };
+const TP_MIN = 9001, TP_MAX = 9004;           // teleporter pseudo-things (not real Doom types)
+const isTp = t => t >= TP_MIN && t <= TP_MAX;
+const TPCOLORS = { 9001:0x4a6aff, 9002:0xff4a4a, 9003:0x4fdf6f, 9004:0xffd24a };
+const COMPASS = ['E','NE','N','NW','W','SW','S','SE'];
+function defAng(t) { return (t<=4 || t===11 || t===14 || isTp(t)) ? 90 : MONSTERS.has(t) ? 270 : 0; }
+const EDIMS = { // enemy [radius, height] in map units, for scaled markers
+  3004:[20,56], 9:[20,56], 65:[20,56], 84:[20,56], 3001:[20,56], 3002:[30,56], 58:[30,56],
+  3006:[16,48], 3005:[31,56], 69:[24,64], 3003:[24,64], 66:[20,80], 67:[48,64], 68:[64,64],
+  71:[31,56], 64:[20,56], 7:[128,100], 16:[40,110] };
+const WALLTEX = 'STARTAN2', DOORTEX = 'BIGDOOR2', SWTEX = 'SW1COMP';
+// A locked door's entire face uses the matching colored door skin (DOORBLU/DOORYEL/DOORRED —
+// real, confirmed-colorful Doom II textures) instead of the traditional BIGDOOR2. This is the
+// same single-line door mechanism as an ordinary door, just a different texture name, so it's
+// unmissable (the whole door, dead center in view) and renders exactly as reliably as any
+// plain door.
+const LOCKS = [ // [label, door texture, css color, DR special] — color matches the key pickups
+  ['None',   DOORTEX,    '#c9a13b', 1],
+  ['Blue',   'DOORBLU',  '#4a6aff', 26],
+  ['Yellow', 'DOORYEL',  '#ffd24a', 27],
+  ['Red',    'DOORRED',  '#ff4a4a', 28],
+];
+const WALLMATS = [ // [label, wall texture, css color]
+  ['Tech',     'STARTAN2', '#8f8878'],
+  ['Stone',    'STONE2',   '#7d7d7d'],
+  ['Brown',    'BROWN1',   '#7d5f47'],
+  ['Wood',     'WOOD5',    '#6b4a2e'],
+  ['Marble',   'MARBLE1',  '#5c7a64'],
+  ['Metal',    'METAL2',   '#565b63'],
+  ['Brick',    'BRICK7',   '#8a4a3a'],
+  ['Computer', 'COMPBLUE', '#3a5faf'],
+  ['Ash rock', 'ASHWALL2', '#4e4a46'],
+  // murals (Doom II). Mural textures are wider than one block — paint consecutive
+  // wall cells with the numbered pieces to assemble the full picture.
+  // Icon of Sin: nine 256×128 tiles forming a 3×3 face (rows top to bottom)
+  ['Icon of Sin — top left horn (4×2)',        'ZZZFACE1', '#8a5a48'],
+  ['Icon of Sin — forehead / brain hole (4×2)','ZZZFACE2', '#a2664c'],
+  ['Icon of Sin — top right horn (4×2)',       'ZZZFACE3', '#8a5a48'],
+  ['Icon of Sin — left brow & eye (4×2)',      'ZZZFACE4', '#96604a'],
+  ['Icon of Sin — face center (4×2)',          'ZZZFACE5', '#96604a'],
+  ['Icon of Sin — right brow & eye (4×2)',     'ZZZFACE6', '#96604a'],
+  ['Icon of Sin — left jaw (4×2)',             'ZZZFACE7', '#8a5a48'],
+  ['Icon of Sin — mouth & chin (4×2)',         'ZZZFACE8', '#8a5a48'],
+  ['Icon of Sin — right jaw (4×2)',            'ZZZFACE9', '#8a5a48'],
+  ['Mural: Goat face (2×1.5)',                 'SP_FACE1', '#7a6a52'],
+  ['Mural: Hanging victims (2×2)',             'SP_DUDE1', '#6a4a42'],
+  ['Mural: Hanging victims 2 (2×2)',           'SP_DUDE2', '#6a4a42'],
+  ['Mural: Impaled corpses (1×2)',             'SP_DUDE4', '#6f4c44'],
+  ['Mural: Impaled corpses 2 (1×2)',           'SP_DUDE5', '#6f4c44'],
+  ['Mural: Skin face (4×2)',                   'SKINFACE', '#8a5a42'],
+  ['Mural: Spine wall (2×1)',                  'SKSPINE2', '#7a5a4a'],
+  ['Mural: Horned demon face — marble (2×2)',  'MARBFACE', '#5c7a64'],
+  ['Mural: Clawed demon face — marble (2×2)',  'MARBFAC2', '#5c7a64'],
+  ['Mural: Bloody demon face — marble (2×2)',  'MARBFAC3', '#5c7a64'],
+  ['Mural: Gargoyle — green stone (1×2)',      'GSTGARG', '#4f6a55'],
+  ['Mural: Lion face — green stone (1×2)',     'GSTLION', '#4f6a55'],
+  ['Mural: Satyr face — green stone (1×2)',    'GSTSATYR', '#4f6a55'],
+];
+
+const CEILMATS = [ // [label, ceiling flat, css color] — ignored on Sky levels (sky always wins)
+  ['Default',    'CEIL3_5', '#3e4148'],
+  ['Tech panel', 'CEIL1_1', '#54585f'],
+  ['Tech light', 'TLITE6_4','#7a7a5a'],
+  ['Grate',      'CEIL5_1', '#4a4e52'],
+  ['Marble',     'CEIL4_1', '#4a5c52'],
+  ['Brown',      'CEIL3_1', '#5a4a3a'],
+];
+
+const $ = id => document.getElementById(id);
+let tool = 'terrain';
+// Doomcraft always sculpts/targets at 16-unit sub-cell resolution and single-cell brush size —
+// there's no sidebar to expose brush/step steppers, so these are fixed instead of configurable.
+let terraDir = 'raise', terraStep = 16, brushN = 1, terraSub = true;
+let ceilDir = 'lower', ceilStep = 16, ceilBrushN = 1, ceilSub = true;
+// terraSub/ceilSub: true when the ¼×¼ (16-unit) brush is selected — targets a single quarter
+// of the clicked cell instead of the whole N×N cell footprint.
+let stickyAng = null;   // once the user rotates something, new placements reuse that facing
+const TELE_IDX = SURFS.findIndex(s => s[1] === 'GATE1');    // legacy painted pads
+const ARRIVE_IDX = SURFS.findIndex(s => s[1] === 'GATE2');
+function brushCells(x, y, n) {   // N×N brush centered on the clicked cell (clipped to grid)
+  const N = n ?? brushN, off = Math.floor((N-1)/2), out = [];
+  for (let j=0;j<N;j++) for (let i=0;i<N;i++) {
+    const bx = x-off+i, by = y-off+j;
+    if (inb(bx,by)) out.push([bx,by]);
+  }
+  return out;
+}
+$('infoGrid').textContent = W + ' × ' + D + ' cells (64 units each)';
+THING_CATS.forEach(([label], i) => $('catSel').add(new Option(label, i)));
+function fillThings() {
+  const [,, color, items] = THING_CATS[+$('catSel').value];
+  $('thingSel').innerHTML = '';
+  for (const [id,name] of items) $('thingSel').add(new Option(name, id));
+  $('thingChip').style.background = '#' + color.toString(16).padStart(6,'0');
+}
+$('catSel').onchange = () => { fillThings(); tool = 'thing'; syncHotbar(); };
+$('thingSel').onchange = () => { tool = 'thing'; syncHotbar(); };
+fillThings();
+let paintSurf = 0, paintWall = 0, paintCeil = 0, doorLock = 0;
+SURFS.forEach(([label], i) => {
+  if (i === TELE_IDX || i === ARRIVE_IDX) return;   // teleporters are placed as objects now
+  $('surfSel').add(new Option(label, i));
+});
+WALLMATS.forEach(([label], i) => $('wallSel').add(new Option(label, i)));
+CEILMATS.forEach(([label], i) => $('ceilSel').add(new Option(label, i)));
+const BASE_WALLS = 9;   // plain materials only — murals are for painting, not the boundary
+WALLMATS.slice(0, BASE_WALLS).forEach(([label], i) => $('borderSel').add(new Option(label, i)));
+$('borderSel').onchange = () => autosave();
+$('lvlName').onchange = () => autosave();
+$('surfSel').onchange = () => { paintSurf = +$('surfSel').value; syncHotbar(); };
+$('wallSel').onchange = () => { paintWall = +$('wallSel').value; syncHotbar(); };
+$('ceilSel').onchange = () => { paintCeil = +$('ceilSel').value; syncHotbar(); };
+$('lockSel').onchange = () => { doorLock = +$('lockSel').value; syncHotbar(); };
+// hotbar slot 0..9 <-> tool name, same mapping DoomBlocks uses for its number-row hotkeys
+const TOOL_KEYS = { Digit1:'terrain', Digit2:'ceil', Digit3:'cpaint', Digit4:'erase', Digit5:'wall',
+                     Digit6:'door', Digit7:'exit', Digit8:'paint', Digit9:'wpaint', Digit0:'thing' };
+const MATERIAL_TOOLS = new Set(['cpaint','wpaint','door','paint','thing']);   // tools with a material/type choice
+function syncHotbar() {
+  document.querySelectorAll('.slot').forEach(s => s.classList.toggle('active', s.dataset.tool === tool));
+  $('toolPanel').classList.toggle('hidden', !MATERIAL_TOOLS.has(tool));
+  $('mpCeil').classList.toggle('hidden', tool !== 'cpaint');
+  $('mpWall').classList.toggle('hidden', tool !== 'wpaint');
+  $('mpDoor').classList.toggle('hidden', tool !== 'door');
+  $('mpFloor').classList.toggle('hidden', tool !== 'paint');
+  $('mpThing').classList.toggle('hidden', tool !== 'thing');
+  $('surfChip').style.background = SURFS[paintSurf][2];
+  $('wallChip').style.background = WALLMATS[paintWall][2];
+  $('ceilChip').style.background = CEILMATS[paintCeil][2];
+  $('lockChip').style.background = LOCKS[doorLock][2];
+  $('stTool').textContent = tool === 'terrain' ? 'terrain: right-click raises, left-click lowers (16-unit steps)'
+    : tool === 'ceil' ? 'ceiling: right-click lowers, left-click raises (16-unit steps)'
+    : tool === 'paint' ? 'floor: ' + SURFS[paintSurf][0] + ' (scroll to change)'
+    : tool === 'wpaint' ? 'wall paint: ' + WALLMATS[paintWall][0] + ' (scroll to change)'
+    : tool === 'cpaint' ? 'ceiling: ' + CEILMATS[paintCeil][0] + ' (scroll to change, no effect on Sky levels)'
+    : tool === 'door' ? 'door: ' + LOCKS[doorLock][0] + (doorLock ? ' key required' : '') + ' (scroll to change)'
+    : tool === 'exit' ? 'exit switch'
+    : tool === 'erase' ? 'erase: reset a cell to open floor'
+    : tool === 'wall' ? 'wall (floor to ceiling)'
+    : tool === 'thing' ? 'place: ' + ($('thingSel').selectedOptions[0] ? $('thingSel').selectedOptions[0].text : '') + ' (scroll to change)'
+    : 'tool: ' + tool;
+}
+document.querySelectorAll('.slot').forEach(s => s.onclick = () => { tool = s.dataset.tool; syncHotbar(); });
+
+// ================= editing =================
+let undoStack = [];
+function checkpoint() {
+  undoStack.push(JSON.stringify(grid));
+  if (undoStack.length > 60) undoStack.shift();
+}
+function undo() {
+  if (!undoStack.length) return;
+  grid = JSON.parse(undoStack.pop());
+  rebuild();
+}
+
+// ---- browser autosave, levels & grid sizing ----
+const LS_KEY = 'doomcraft-autosave';   // separate from DoomBlocks' own autosave key, so opening
+                                        // one tool never overwrites the other's in-progress work
+function clampDim(v){ return Math.max(8, Math.min(64, Math.round(v)||32)); }
+function storeCur() {
+  levels[cur] = { W, D, ceil:+$('ceilH').value, sky:$('sky').value,
+    name:$('lvlName').value, border:+$('borderSel').value||0, grid };
+}
+function autosave() {
+  try {
+    storeCur();
+    localStorage.setItem(LS_KEY, JSON.stringify({ levels, cur }));
+  } catch {}
+}
+function applyLevelState(L) {   // set globals + inputs from a level (no redraw)
+  W = clampDim(L.W); D = clampDim(L.D); grid = L.grid;
+  while (grid.length < W*D) grid.push(newCol());
+  grid.length = W*D;
+  $('gw').value = W; $('gd').value = D;
+  $('ceilH').value = L.ceil || 128;
+  $('sky').value = L.sky === true ? 'SKY1' : (L.sky || '');   // old saves used a boolean
+  $('lvlName').value = L.name || '';
+  $('borderSel').value = Math.min(L.border || 0, BASE_WALLS - 1);
+}
+function refreshView() {
+  $('infoGrid').textContent = W + ' × ' + D + ' cells (64 units each)';
+  undoStack = [];
+  if (gl.ready) makeScenery();
+  rebuild();
+}
+function freshLevel() {   // a completely empty board
+  return { W:32, D:32, ceil:128, sky:'', name:'', border:0,
+    grid: Array.from({length:32*32}, newCol) };
+}
+function adoptProject(j) {
+  const norm = L => ({ W:clampDim(L.W), D:clampDim(L.D), ceil:L.ceil||128,
+    sky: L.sky === true ? 'SKY1' : (L.sky || ''), name:L.name||'', border:L.border||0, grid:L.grid });
+  if (j.levels && j.levels.length) {
+    levels = j.levels.map(norm);
+    cur = Math.min(j.cur || 0, levels.length - 1);
+  } else {
+    levels = [norm(j)]; cur = 0;                // legacy single-level project
+  }
+  applyLevelState(levels[cur]);
+  refreshView();
+}
+function resizeGrid(nw, nd) {
+  nw = clampDim(nw); nd = clampDim(nd);
+  if (nw === W && nd === D) return;
+  const ng = Array.from({length:nw*nd}, newCol);
+  for (let y=0; y<Math.min(D,nd); y++)
+    for (let x=0; x<Math.min(W,nw); x++) ng[y*nw+x] = grid[gi(x,y)];
+  W = nw; D = nd; grid = ng; undoStack = [];   // undo cleared: snapshots have the old size
+  $('gw').value = W; $('gd').value = D;
+  $('infoGrid').textContent = W + ' × ' + D + ' cells (64 units each)';
+  if (gl.ready) makeScenery();
+  rebuild();
+}
+$('gw').onchange = () => resizeGrid(+$('gw').value, D);
+$('gd').onchange = () => resizeGrid(W, +$('gd').value);
+// rotates the object at the crosshair's targeted cell, 45° per press — the "R" hotkey
+function rotateAtCrosshair() {
+  const t = gl.curTarget;
+  if (!t) return;
+  const c = grid[gi(t.hit.x, t.hit.y)];
+  if (!c.thing) return;
+  checkpoint();
+  c.ang = ((c.ang ?? defAng(c.thing)) + 45) % 360;
+  stickyAng = c.ang;
+  rebuild();
+}
+window.addEventListener('keydown', e => {
+  if ((e.metaKey||e.ctrlKey) && e.key==='z') { undo(); e.preventDefault(); return; }
+  if (e.key === 'Escape') {
+    // if the pointer is still locked, let the browser's own Escape-releases-lock behavior run —
+    // the pointerlockchange listener below opens the menu once that actually happens. Only
+    // toggle directly when there's no lock to release (menu already open, or never engaged).
+    if (document.pointerLockElement !== $('cv')) toggleMenu();
+    e.preventDefault(); return;
+  }
+  if (menuOpen || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  walk.keys[e.code] = true;
+  if (e.code === 'Space') { if (!walk.fly && !walk.noclip) useAction(); e.preventDefault(); }
+  if (e.code === 'KeyE') { useAction(); e.preventDefault(); }
+  if (e.code === 'KeyF') { walk.fly = !walk.fly; walk.vy = 0; $('stMsg').textContent = 'fly ' + (walk.fly ? 'ON' : 'off'); }
+  if (e.code === 'KeyN') { walk.noclip = !walk.noclip; walk.vy = 0; $('stMsg').textContent = 'noclip ' + (walk.noclip ? 'ON' : 'off'); }
+  if (e.code === 'KeyR') rotateAtCrosshair();
+  const t = TOOL_KEYS[e.code];
+  if (t) { tool = t; syncHotbar(); }
+  if (e.code.startsWith('Arrow')) e.preventDefault();
+});
+window.addEventListener('keyup', e => { walk.keys[e.code] = false; });
+
+function ceilUnits() { return Math.round(Math.min(480, Math.max(64, +$('ceilH').value||128)) / HU); }
+function applyTool(x, y, sxi, syi, skipCheckpoint) {
+  if (!inb(x,y)) return;
+  const c = grid[gi(x,y)];
+  if (tool==='select') {              // selection never modifies the map
+    selCell = c.thing ? {x, y} : null;
+    refreshInfo();
+    return;
+  }
+  if (tool==='ceil' && ceilDir==='lower' && $('sky').value) {
+    // Sky levels render an F_SKY1 ceiling at effectively infinite height (the classic
+    // "sky hack"), and two adjoining Sky sectors draw coplanar regardless of height —
+    // so a lowered ceiling has no visible cap or collar wall in-game. Only meaningful
+    // on indoor (non-sky) levels.
+    $('stMsg').textContent = '⚠ Lowering the ceiling has no effect on Sky levels — set Sky to Indoors first.';
+    return;
+  }
+  if (!skipCheckpoint) checkpoint();   // drag-to-paint checkpoints once per stroke, not per cell
+  const maxH = Math.min(HMAX, ceilUnits());
+  if (tool==='terrain') {
+    const delta = (terraDir==='raise' ? 1 : -1) * (terraStep/HU);
+    if (terraSub && sxi != null && !c.wall && !c.door && !c.exit) {
+      // ¼×¼ brush: sculpt just the one quarter-cell under the cursor
+      if (!c.sh) c.sh = Array(16).fill(c.h);
+      const i = sidx(sxi,syi);
+      c.sh[i] = Math.max(0, Math.min(maxH, c.sh[i] + delta));
+      collapseSh(c);
+    } else {
+      for (const [bx,by] of brushCells(x,y)) {
+        const cc = grid[gi(bx,by)];
+        if (cc.wall || cc.door || cc.exit) continue;   // structures are left alone; use Erase first
+        if (cc.sh) { cc.sh = cc.sh.map(v => Math.max(0, Math.min(maxH, v + delta))); collapseSh(cc); }
+        else cc.h = Math.max(0, Math.min(maxH, cc.h + delta));
+      }
+    }
+  }
+  else if (tool==='ceil') {
+    const delta = (ceilDir==='lower' ? 1 : -1) * (ceilStep/HU);
+    if (ceilSub && sxi != null && !c.wall && !c.exit && !c.door) {
+      // ¼×¼ brush: sculpt just the one quarter-cell's ceiling. (Doors keep the whole-cell
+      // neighbor-redirect behavior below — a door has no single "quarter" of its own.)
+      if (!c.sch) c.sch = Array(16).fill(c.ch||0);
+      const i = sidx(sxi,syi);
+      const maxDrop = Math.max(0, ceilUnits() - subFloorH(c, sxi, syi));
+      c.sch[i] = Math.max(0, Math.min(maxDrop, c.sch[i] + delta));
+      collapseSch(c);
+    } else {
+      // Doors have no ceiling of their own — a door's open height always follows
+      // whatever its neighbors are. So lowering the ceiling ON a door instead lowers
+      // the door's open (non-wall) neighbor cells: that caps how high it opens and
+      // leaves ordinary wall above it, without the user needing to find/paint the
+      // corridor cell beside the door themselves.
+      const targets = new Set();
+      for (const [bx,by] of brushCells(x,y,ceilBrushN)) {
+        const cc = grid[gi(bx,by)];
+        if (cc.wall || cc.exit) continue;
+        if (cc.door) {
+          for (const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+            const nx = bx+dx, ny = by+dy;
+            if (!inb(nx,ny)) continue;
+            const n = grid[gi(nx,ny)];
+            if (!n.wall && !n.exit && !n.door) targets.add(gi(nx,ny));
+          }
+        } else targets.add(gi(bx,by));
+      }
+      for (const idx of targets) {
+        const t = grid[idx];
+        if (t.sch) {
+          t.sch = t.sch.map((v,i2) => {
+            const sxi2 = i2%SUBN, syi2 = Math.floor(i2/SUBN);
+            const md = Math.max(0, ceilUnits() - subFloorH(t, sxi2, syi2));
+            return Math.max(0, Math.min(md, v + delta));
+          });
+          collapseSch(t);
+        } else {
+          const maxDrop = Math.max(0, ceilUnits() - t.h);   // ceiling can descend to the floor
+          t.ch = Math.max(0, Math.min(maxDrop, (t.ch||0) + delta));
+        }
+      }
+    }
+  }
+  else if (tool==='erase') { Object.assign(c, newCol()); }
+  else if (tool==='wall') { c.wall=true; c.door=c.exit=false; c.thing=0; }
+  else if (tool==='door') { c.door=true; c.wall=c.exit=false; c.thing=0; c.lock=doorLock; }
+  else if (tool==='exit') { c.exit=true; c.wall=c.door=false; c.thing=0; }
+  else if (tool==='paint') { c.surf = paintSurf; c.ssurf = null; }   // whole-cell paint always wins outright, clearing any Vector Select split-texture
+  else if (tool==='wpaint') { c.wmat = paintWall; }
+  else if (tool==='cpaint') { c.cmat = paintCeil; }
+  else if (tool==='fillfloor') { floodFill(x, y, 'floor'); }
+  else if (tool==='fillwall') { floodFill(x, y, 'wall'); }
+  else if (tool==='fillceil') { floodFill(x, y, 'ceil'); }
+  else if (tool==='thing') {
+    const t = +$('thingSel').value;
+    if (t===1) for (const o of grid) if (o.thing===1) o.thing=0; // one player start
+    c.wall=c.door=c.exit=false; c.thing = t; c.ang = stickyAng ?? defAng(t);
+  }
+  else if (tool==='rotate') {
+    if (c.thing) { c.ang = ((c.ang ?? defAng(c.thing)) + 45) % 360; stickyAng = c.ang; }
+  }
+  rebuild();
+}
+// flood-fill paint: spreads over connected cells that match the clicked cell
+// floors: same texture AND same height, stopping at walls/doors/steps
+// walls: connected wall blocks with the same material (open cells fill edge material instead)
+function floodFill(x0, y0, mode) {
+  const start = grid[gi(x0,y0)];
+  const solid = c => c.wall || c.exit;
+  let match, apply;
+  if (mode === 'wall') {
+    if (start.exit) return;                                  // exit switches keep their texture
+    if (start.wall) {
+      if (start.wmat === paintWall) return;
+      const w0 = start.wmat;
+      match = c => c.wall && c.wmat === w0;
+      apply = c => c.wmat = paintWall;
+    } else {                                                 // open area: fill its edge material
+      if (start.wmat === paintWall) return;
+      const w0 = start.wmat, h0 = start.h;
+      match = c => !solid(c) && !c.door && !c.sh && c.wmat === w0 && c.h === h0;
+      apply = c => c.wmat = paintWall;
+    }
+  } else if (mode === 'ceil') {
+    if (solid(start) || start.door) return;
+    if (start.cmat === paintCeil) return;
+    const cm0 = start.cmat, ch0 = start.ch||0;
+    // quarter-sculpted cells (sch) don't have one uniform height, so they never match —
+    // fill simply stops there, same as at a wall or door.
+    match = c => !solid(c) && !c.door && !c.sch && c.cmat === cm0 && (c.ch||0) === ch0;
+    apply = c => c.cmat = paintCeil;
+  } else {
+    if (solid(start) || start.door) return;
+    if (start.surf === paintSurf && !start.ssurf) return;
+    const s0 = start.surf, h0 = start.h;
+    // quarter-sculpted cells (sh/ssurf) don't have one uniform height/texture, so they never
+    // match — fill simply stops there, same as at a wall or door.
+    match = c => !solid(c) && !c.door && !c.sh && !c.ssurf && c.surf === s0 && c.h === h0;
+    apply = c => { c.surf = paintSurf; c.ssurf = null; };   // whole-cell fill always wins outright
+  }
+  const seen = new Set([gi(x0,y0)]);
+  const q = [[x0,y0]];
+  apply(start);
+  while (q.length) {
+    const [qx,qy] = q.pop();
+    for (const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+      const nx=qx+dx, ny=qy+dy;
+      if (!inb(nx,ny) || seen.has(gi(nx,ny))) continue;
+      seen.add(gi(nx,ny));
+      const n = grid[gi(nx,ny)];
+      if (match(n)) { apply(n); q.push([nx,ny]); }
+    }
+  }
+}
+function removeTeleporter(id) {   // clears BOTH ends of a pair
+  for (const c of grid) {
+    if (c.tele !== id) continue;
+    if (c.surf === TELE_IDX || c.surf === ARRIVE_IDX) c.surf = 0;
+    if (c.thing === 14) c.thing = 0;
+    c.tele = 0; c.tw = false;
+  }
+}
+function smartRemove(x, y) {
+  if (!inb(x,y)) return;
+  const c = grid[gi(x,y)];
+  checkpoint();
+  if (c.tele) { removeTeleporter(c.tele); $('stMsg').textContent = 'teleporter pair removed'; }
+  else if (c.thing) c.thing = 0;
+  else if (c.wall||c.door||c.exit) { c.wall=c.door=c.exit=false; c.lock=0; }
+  else if (c.surf === TELE_IDX || c.surf === ARRIVE_IDX) c.surf = 0;   // unpaired pad paint
+  else if (c.sh) { c.sh = c.sh.map(v => Math.max(0, v-1)); collapseSh(c); }
+  else c.h = Math.max(0, c.h-1);
+  rebuild();
+}
+
+
+// ================= compiler: blocks -> Doom map =================
+function compile() {
+  const ceil = ceilUnits() * HU;
+  const sky = !!$('sky').value;
+  // sector properties live on a sub-cell grid (SW×SD, SS units per cell) so that ¼×¼-sculpted
+  // Terrain/Ceiling heights compile into real sector boundaries. Walls/doors/textures/things
+  // never vary within a parent cell, so they're just replicated across its 16 sub-cells —
+  // for any map that never uses the ¼×¼ brush this produces byte-for-byte the same regions
+  // and boundary runs as the old per-cell algorithm, just computed at finer resolution.
+  const SW = W*SUBN, SD = D*SUBN;
+  const sgi = (sx,sy) => sy*SW + sx;
+  const props = new Array(SW*SD).fill(null);       // null = solid
+  for (let y=0;y<D;y++) for (let x=0;x<W;x++) {
+    const c = grid[gi(x,y)];
+    if (c.wall || c.exit || c.door) continue;
+    const tp = isTp(c.thing);   // teleporter object: its cell becomes a GATE pad sector
+    const ceilt = sky ? 'F_SKY1' : CEILMATS[c.cmat||0][1];
+    for (let syi=0; syi<SUBN; syi++) for (let sxi=0; sxi<SUBN; sxi++) {
+      // surf (floor texture) is looked up per sub-cell, not once for the whole parent cell —
+      // a Vector Select shape that only partly covers a cell (c.ssurf) needs its texture to
+      // stop exactly at the shape's edge instead of bleeding across the rest of the cell.
+      const s = SURFS[subSurf(c,sxi,syi)];
+      const floort = tp ? 'GATE' + (c.thing - TP_MIN + 1) : s[1];
+      const special = tp ? 0 : s[3];
+      const fh = Math.min(subFloorH(c,sxi,syi)*HU, ceil);
+      const sx = x*SUBN+sxi, sy = y*SUBN+syi;
+      props[sgi(sx,sy)] = { floorh: fh, ceilh: Math.max(fh, ceil - subCeilCh(c,sxi,syi)*HU),
+        floort, ceilt, light: 192, special, tag: 0, door: false };
+    }
+  }
+  for (let y=0;y<D;y++) for (let x=0;x<W;x++) {    // doors: floor = lowest point of any open neighbor
+    const c = grid[gi(x,y)];
+    if (!c.door) continue;
+    let f = null;
+    for (const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+      const nx=x+dx, ny=y+dy;
+      if (!inb(nx,ny)) continue;
+      const n = grid[gi(nx,ny)];
+      if (n.wall || n.exit || n.door) continue;
+      for (let syi=0; syi<SUBN; syi++) for (let sxi=0; sxi<SUBN; sxi++) {
+        const fh = Math.min(subFloorH(n,sxi,syi)*HU, ceil);
+        if (f===null || fh < f) f = fh;
+      }
+    }
+    if (f===null) f = Math.min(c.h*HU, ceil);
+    for (let syi=0; syi<SUBN; syi++) for (let sxi=0; sxi<SUBN; sxi++) {
+      const sx = x*SUBN+sxi, sy = y*SUBN+syi;
+      props[sgi(sx,sy)] = { floorh:f, ceilh:f, floort:'FLAT1', ceilt:'FLAT1', light:192, special:0, tag:0,
+        door:true, lock: c.lock||0 };
+    }
+  }
+  // flood-fill identical sub-cells into regions (this is the sector merging)
+  const reg = new Array(SW*SD).fill(-1);            // -1 solid, -2 exit, >=0 region
+  for (let y=0;y<D;y++) for (let x=0;x<W;x++)
+    if (grid[gi(x,y)].exit) for (let syi=0;syi<SUBN;syi++) for (let sxi=0;sxi<SUBN;sxi++)
+      reg[sgi(x*SUBN+sxi, y*SUBN+syi)] = -2;
+  const key = i => props[i] ? JSON.stringify(props[i]) : null;
+  const sectors = [];
+  for (let sy=0; sy<SD; sy++) for (let sx=0; sx<SW; sx++) {
+    const i = sgi(sx,sy);
+    if (!props[i] || reg[i] >= 0) continue;
+    const id = sectors.length, k = key(i);
+    sectors.push({ ...props[i] });
+    const q = [[sx,sy]]; reg[i] = id;
+    while (q.length) {
+      const [qx,qy] = q.pop();
+      for (const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+        const nx=qx+dx, ny=qy+dy;
+        if (nx<0||nx>=SW||ny<0||ny>=SD) continue;
+        const ni = sgi(nx,ny);
+        if (reg[ni] === -1 && props[ni] && key(ni) === k) { reg[ni] = id; q.push([nx,ny]); }
+      }
+    }
+  }
+  const isDoor = r => r>=0 && sectors[r].door;
+  const doorLockOf = r => (r>=0 && sectors[r].door) ? (sectors[r].lock||0) : 0;
+  // border segments -> linedefs (merge collinear runs with same left/right regions)
+  const m = { vertices:[], linedefs:[], sidedefs:[], sectors: sectors.map(s => {
+      const { door, lock, ...rest } = s; return rest; }), things:[] };
+  // teleporters: GATE1 pad regions send the player to the nearest Teleport Landing (thing 14)
+  const isPad = r => r>=0 && !sectors[r].door && /^GATE[1-4]$/.test(sectors[r].floort);
+  const padTarget = {};
+  // teleporters/things are still whole-cell — look up a parent cell's region via one
+  // representative (center) sub-cell; unsculpted cells are uniform across all 16 anyway.
+  const regOf = (x,y) => (inb(x,y)) ? reg[sgi(x*SUBN + (SUBN>>1), y*SUBN + (SUBN>>1))] : -1;
+  {
+    const endpoints = [], landings = [], secTag = {};
+    let nextTag = 1;
+    const tagOf = r => {
+      if (!secTag[r]) { secTag[r] = nextTag++; m.sectors[r].tag = secTag[r]; }
+      return secTag[r];
+    };
+    for (let y=0;y<D;y++) for (let x=0;x<W;x++) {
+      const c = grid[gi(x,y)];
+      const r = regOf(x,y);
+      if (r < 0) continue;
+      if (isTp(c.thing)) { endpoints.push({ r, color: c.thing, x: x+0.5, y: y+0.5 }); tagOf(r); }
+      else if (c.thing === 14) { landings.push({ x: x+0.5, y: y+0.5, sec: r }); tagOf(r); }
+    }
+    const cent = {};
+    for (let y=0;y<D;y++) for (let x=0;x<W;x++) {
+      const r = regOf(x,y);
+      if (!isPad(r)) continue;
+      cent[r] = cent[r] || { sx:0, sy:0, n:0 };
+      cent[r].sx += x+0.5; cent[r].sy += y+0.5; cent[r].n++;
+    }
+    for (const r in cent) {
+      const eps = endpoints.filter(e => e.r === +r);
+      if (eps.length) {
+        // teleporter object: send the player to the nearest endpoint of the SAME color
+        let best = null, bd = Infinity;
+        for (const e of eps) for (const o of endpoints) {
+          if (o.color !== e.color || o.r === e.r) continue;
+          const d2 = (o.x-e.x)**2 + (o.y-e.y)**2;
+          if (d2 < bd) { bd = d2; best = o; }
+        }
+        if (best) padTarget[r] = secTag[best.r];
+      } else if (sectors[r].floort === 'GATE1') {
+        // legacy painted pads: nearest landing thing
+        const cx = cent[r].sx/cent[r].n, cy = cent[r].sy/cent[r].n;
+        let best = null, bd = Infinity;
+        for (const l of landings) {
+          if (l.sec === +r) continue;                  // never teleport a pad to itself
+          const d2 = (l.x-cx)**2 + (l.y-cy)**2;
+          if (d2 < bd) { bd = d2; best = l; }
+        }
+        if (best) padTarget[r] = secTag[best.sec];
+      }
+    }
+  }
+  const vmap = new Map();
+  const V = (x,y) => {
+    const k = x+','+y;
+    if (!vmap.has(k)) { vmap.set(k, m.vertices.length); m.vertices.push({x, y}); }
+    return vmap.get(k);
+  };
+  const R = (sx,sy) => (sx>=0 && sx<SW && sy>=0 && sy<SD) ? reg[sgi(sx,sy)] : -1;
+  // which wall texture an edge between two sub-cells should use: solid side wins (you painted
+  // that wall block, looked up on its whole parent cell — walls aren't sub-resolved); between
+  // open sub-cells the taller floor wins
+  const solidCell = (x,y) => !inb(x,y) || grid[gi(x,y)].wall || grid[gi(x,y)].exit;
+  const wm = (x,y) => WALLMATS[grid[gi(x,y)].wmat||0][1];
+  const borderTex = (WALLMATS[+$('borderSel').value] || WALLMATS[0])[1];
+  function edgeTex(sxa,sya, sxb,syb) {
+    const xa = Math.floor(sxa/SUBN), ya = Math.floor(sya/SUBN), xb = Math.floor(sxb/SUBN), yb = Math.floor(syb/SUBN);
+    const as = solidCell(xa,ya), bs = solidCell(xb,yb);
+    if (as && bs) return WALLTEX;
+    if (as) return inb(xa,ya) ? wm(xa,ya) : borderTex;
+    if (bs) return inb(xb,yb) ? wm(xb,yb) : borderTex;
+    const pa = props[sgi(sxa,sya)], pb = props[sgi(sxb,syb)];
+    return (pa && pb && pa.floorh < pb.floorh) ? wm(xb,yb) : wm(xa,ya);
+  }
+  function emit(x1,y1, x2,y2, front, back, solidType, tex) {
+    tex = tex || WALLTEX;
+    if (back === null) { // one-sided
+      const doorFront = isDoor(front);
+      m.sidedefs.push({ xoff:0, yoff:0, upper:'-', lower:'-',
+        middle: doorFront ? 'DOORTRAK' : (solidType===-2 ? SWTEX : tex), sector: front });
+      m.linedefs.push({ v1:V(x1,y1), v2:V(x2,y2), flags:1,
+        special: solidType===-2 ? 11 : 0, tag:0, front:m.sidedefs.length-1, back:-1 });
+    } else {
+      const door = isDoor(front) || isDoor(back);
+      const tele = !door && (isPad(front) !== isPad(back));
+      let special = 0, tag = 0;
+      if (door) {
+        if (isDoor(front)) {
+          // DR doors open the BACK sector — flip the line so the door is behind it
+          [front, back] = [back, front];
+          [x1, y1, x2, y2] = [x2, y2, x1, y1];
+        }
+        special = LOCKS[doorLockOf(back)][3];   // back is always the door sector past this point
+      } else if (tele) {
+        if (isPad(front)) {
+          // WR teleports trigger when crossed from the FRONT — face lines away from the pad
+          [front, back] = [back, front];
+          [x1, y1, x2, y2] = [x2, y2, x1, y1];
+        }
+        if (padTarget[back]) { special = 97; tag = padTarget[back]; }
+      }
+      // a locked door's entire face uses the matching colored door skin (DOORBLU/DOORYEL/
+      // DOORRED) instead of the traditional BIGDOOR2 — the same single crossing-line
+      // mechanism as an ordinary door, just a different texture name, so it's guaranteed to
+      // render exactly as reliably as any plain door does.
+      const doorTex = door ? LOCKS[doorLockOf(back)][1] : null;
+      m.sidedefs.push({ xoff:0, yoff:0, upper: doorTex||tex, lower:tex, middle:'-', sector: front });
+      const f = m.sidedefs.length-1;
+      m.sidedefs.push({ xoff:0, yoff:0, upper: doorTex||tex, lower:tex, middle:'-', sector: back });
+      m.linedefs.push({ v1:V(x1,y1), v2:V(x2,y2), flags:4, special, tag, front:f, back:m.sidedefs.length-1 });
+    }
+  }
+  // vertical boundaries (between sub-column sx-1 and sx) — same run-merging as before, just
+  // walked at SS-unit resolution; long collinear runs still collapse into one linedef each,
+  // so an unsculpted map produces identical output to the old per-cell version.
+  for (let sx=0; sx<=SW; sx++) {
+    let run = null;
+    for (let sy=0; sy<=SD; sy++) {
+      const L = sy<SD ? R(sx-1,sy) : -9, Rr = sy<SD ? R(sx,sy) : -9;
+      let pair = (L===Rr || (L<0 && Rr<0)) ? null : L+'|'+Rr;
+      const tex = pair ? edgeTex(sx-1,sy, sx,sy) : '';
+      if (pair) pair += '|'+tex;
+      if (run && run.pair !== pair) { flushV(run); run = null; }
+      if (pair && !run) run = { pair, L, R:Rr, tex, y0:sy, y1:sy };
+      else if (run) run.y1 = sy;
+    }
+    function flushV(r) {
+      const X = sx*SS, ya = r.y0*SS, yb = (r.y1+1)*SS;
+      if (r.L < 0) emit(X, ya, X, yb, r.R, null, r.L, r.tex);        // northward, open east
+      else if (r.R < 0) emit(X, yb, X, ya, r.L, null, r.R, r.tex);   // southward, open west
+      else emit(X, yb, X, ya, r.L, r.R, 0, r.tex);                   // front = west
+    }
+  }
+  // horizontal boundaries (between sub-row sy-1 and sy)
+  for (let sy=0; sy<=SD; sy++) {
+    let run = null;
+    for (let sx=0; sx<=SW; sx++) {
+      const S = sx<SW ? R(sx,sy-1) : -9, N = sx<SW ? R(sx,sy) : -9;
+      let pair = (S===N || (S<0 && N<0)) ? null : S+'|'+N;
+      const tex = pair ? edgeTex(sx,sy-1, sx,sy) : '';
+      if (pair) pair += '|'+tex;
+      if (run && run.pair !== pair) { flushH(run); run = null; }
+      if (pair && !run) run = { pair, S, N, tex, x0:sx, x1:sx };
+      else if (run) run.x1 = sx;
+    }
+    function flushH(r) {
+      const Y = sy*SS, xa = r.x0*SS, xb = (r.x1+1)*SS;
+      if (r.S < 0) emit(xb, Y, xa, Y, r.N, null, r.S, r.tex);        // westward, open north
+      else if (r.N < 0) emit(xa, Y, xb, Y, r.S, null, r.N, r.tex);   // eastward, open south
+      else emit(xa, Y, xb, Y, r.S, r.N, 0, r.tex);                   // front = south
+    }
+  }
+  // things
+  for (let y=0;y<D;y++) for (let x=0;x<W;x++) {
+    const c = grid[gi(x,y)];
+    if (!c.thing) continue;
+    m.things.push({ x:x*CS+CS/2, y:y*CS+CS/2,
+      angle: c.ang ?? defAng(c.thing),
+      type: isTp(c.thing) ? 14 : c.thing,    // teleporters export as their own arrival landing
+      flags:7 });
+  }
+  return m;
+}
+
+// ================= WAD writer =================
+function str8w(s) { const b=new Uint8Array(8); for (let i=0;i<Math.min(8,s.length);i++) b[i]=s.toUpperCase().charCodeAt(i); return b; }
+function mapLumps(m, mapName) {
+  const str8 = str8w;
+  let buf = new ArrayBuffer(m.things.length*10), dv = new DataView(buf);
+  m.things.forEach((t,i)=>{ dv.setInt16(i*10,Math.round(t.x),true); dv.setInt16(i*10+2,Math.round(t.y),true);
+    dv.setInt16(i*10+4,t.angle,true); dv.setInt16(i*10+6,t.type,true); dv.setInt16(i*10+8,t.flags,true); });
+  const THINGS = buf;
+  buf = new ArrayBuffer(m.linedefs.length*14); dv = new DataView(buf);
+  m.linedefs.forEach((l,i)=>{ dv.setUint16(i*14,l.v1,true); dv.setUint16(i*14+2,l.v2,true);
+    dv.setUint16(i*14+4,l.flags,true); dv.setUint16(i*14+6,l.special,true); dv.setUint16(i*14+8,l.tag,true);
+    dv.setUint16(i*14+10,l.front>=0?l.front:0xFFFF,true); dv.setUint16(i*14+12,l.back>=0?l.back:0xFFFF,true); });
+  const LINEDEFS = buf;
+  buf = new ArrayBuffer(m.sidedefs.length*30); dv = new DataView(buf);
+  let u8 = new Uint8Array(buf);
+  m.sidedefs.forEach((s,i)=>{ dv.setInt16(i*30,s.xoff,true); dv.setInt16(i*30+2,s.yoff,true);
+    u8.set(str8(s.upper),i*30+4); u8.set(str8(s.lower),i*30+12); u8.set(str8(s.middle),i*30+20);
+    dv.setUint16(i*30+28,s.sector,true); });
+  const SIDEDEFS = buf;
+  buf = new ArrayBuffer(m.vertices.length*4); dv = new DataView(buf);
+  m.vertices.forEach((v,i)=>{ dv.setInt16(i*4,Math.round(v.x),true); dv.setInt16(i*4+2,Math.round(v.y),true); });
+  const VERTEXES = buf;
+  buf = new ArrayBuffer(m.sectors.length*26); dv = new DataView(buf);
+  u8 = new Uint8Array(buf);
+  m.sectors.forEach((s,i)=>{ dv.setInt16(i*26,s.floorh,true); dv.setInt16(i*26+2,s.ceilh,true);
+    u8.set(str8(s.floort),i*26+4); u8.set(str8(s.ceilt),i*26+12);
+    dv.setInt16(i*26+20,s.light,true); dv.setInt16(i*26+22,s.special,true); dv.setInt16(i*26+24,s.tag,true); });
+  const SECTORS = buf;
+  const EMPTY = new ArrayBuffer(0);
+  return [[mapName,EMPTY],['THINGS',THINGS],['LINEDEFS',LINEDEFS],['SIDEDEFS',SIDEDEFS],
+    ['VERTEXES',VERTEXES],['SEGS',EMPTY],['SSECTORS',EMPTY],['NODES',EMPTY],['SECTORS',SECTORS],
+    ['REJECT',EMPTY],['BLOCKMAP',EMPTY]];
+}
+function mapinfoLump(entries) {  // ZDoom-family MAPINFO: level names, skies, progression
+  let txt = '';
+  for (const e of entries) {
+    txt += 'map ' + e.slot + ' "' + (e.name || e.slot).replace(/"/g, '') + '"\n{\n';
+    if (e.sky) txt += '  sky1 = "' + e.sky + '"\n';
+    if (e.next) txt += '  next = "' + e.next + '"\n';
+    txt += '}\n';
+  }
+  const enc = new Uint8Array(txt.length);
+  for (let i=0;i<txt.length;i++) enc[i] = txt.charCodeAt(i);
+  return ['MAPINFO', enc.buffer];
+}
+function buildWad(lumps) {
+  let dataSize = 0;
+  for (const [,d] of lumps) dataSize += d.byteLength;
+  const out = new ArrayBuffer(12 + dataSize + lumps.length*16);
+  const odv = new DataView(out), ou8 = new Uint8Array(out);
+  ou8.set([0x50,0x57,0x41,0x44],0);
+  odv.setInt32(4,lumps.length,true);
+  let ofs = 12; const dir = [];
+  for (const [name,d] of lumps) { ou8.set(new Uint8Array(d),ofs); dir.push([ofs,d.byteLength,name]); ofs += d.byteLength; }
+  odv.setInt32(8,ofs,true);
+  for (const [lofs,lsize,name] of dir) {
+    odv.setInt32(ofs,lofs,true); odv.setInt32(ofs+4,lsize,true); ou8.set(str8w(name),ofs+8); ofs += 16;
+  }
+  return out;
+}
+function wadBytes(m, mapName, skyName) {  // single-map convenience
+  const lumps = mapLumps(m, mapName);
+  if (skyName) lumps.push(mapinfoLump([{ slot:mapName, sky:skyName }]));
+  return buildWad(lumps);
+}
+function download(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name;
+  a.click(); setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+}
+$('btnExport').onclick = () => {
+  storeCur();
+  const multi = levels.length > 1;
+  const maps = [], problems = [], noStart = [];
+  levels.forEach((L, i) => {
+    applyLevelState(L);                        // compile() reads globals + inputs
+    const m = compile();
+    const slot = multi ? 'MAP' + String(i+1).padStart(2,'0') : $('mapName').value;
+    if (!m.sectors.length) problems.push(slot + ': no open space');
+    if (!m.things.some(t => t.type === 1)) noStart.push(slot);
+    // headroom check: the player is 56 tall — anything on a cramped cell is stuck
+    const cu = ceilUnits()*HU;
+    let cramped = 0, crampedStart = false;
+    for (let yy=0; yy<D; yy++) for (let xx=0; xx<W; xx++) {
+      const cc = grid[gi(xx,yy)];
+      if (cc.wall || cc.exit || cc.door || !cc.thing) continue;
+      // ¼×¼-sculpted: a thing could effectively sit over any quarter of its cell, so use
+      // the tallest (worst-case, least headroom) quarter for this check.
+      const worstFloor = cc.sh ? Math.max(...cc.sh) : cc.h;
+      if (cu - Math.min(worstFloor*HU, cu) < 56) { cramped++; if (cc.thing === 1) crampedStart = true; }
+    }
+    if (crampedStart) problems.push(slot + ': Player 1 Start has under 56 units of headroom — the player will be stuck');
+    else if (cramped) problems.push(slot + ': ' + cramped + ' thing(s) on cells with under 56 units of headroom (red-tinted in the editor)');
+    // teleporters with no same-color partner have nowhere to go — warn
+    const tpCount = {};
+    for (const c of grid) if (isTp(c.thing)) tpCount[c.thing] = (tpCount[c.thing] || 0) + 1;
+    const lonely = Object.keys(tpCount).filter(k => tpCount[k] === 1)
+      .map(k => THING_TYPES.find(t => t[0] === +k)[1]);
+    if (lonely.length)
+      problems.push(slot + ': ' + lonely.join(', ') + ' has no matching color endpoint — place at least two of the same color');
+    // legacy painted pads without a landing
+    const hasPad = grid.some(c => !c.wall && !c.exit && !c.door && c.surf === TELE_IDX && !isTp(c.thing));
+    if (hasPad && !m.linedefs.some(l => l.special === 97))
+      problems.push(slot + ': teleport pad(s) have nowhere to go — place a Teleport Landing (Objects → Starts) off the pad');
+    maps.push({ m, slot, sky: $('sky').value, name: L.name || '' });
+  });
+  applyLevelState(levels[cur]);                // restore the level being edited
+  if (noStart.length) {                        // hard requirement: the map can't launch without it
+    alert('Export aborted — no Player 1 Start on: ' + noStart.join(', ') +
+      '.\n\nPlace one via Objects → Starts → Player 1 Start.');
+    return;
+  }
+  if (problems.length && !confirm(problems.join('\n')+'\n\nExport anyway?')) return;
+  const lumps = maps.flatMap(x => mapLumps(x.m, x.slot));
+  lumps.push(mapinfoLump(maps.map((x, i) => ({
+    slot: x.slot,
+    name: x.name || (multi ? 'Level ' + (i+1) : x.slot),
+    sky: x.sky,
+    next: i < maps.length - 1 ? maps[i+1].slot : null,
+  }))));
+  download(new Blob([buildWad(lumps)], {type:'application/octet-stream'}),
+    multi ? 'episode.wad' : $('mapName').value.toLowerCase()+'.wad');
+  $('stMsg').textContent = 'exported ' + maps.length + ' level' + (multi ? 's' : '') +
+    ', ' + maps.reduce((n,x)=>n+x.m.sectors.length,0) + ' sectors total';
+};
+$('btnSave').onclick = () => {
+  storeCur();
+  download(new Blob([JSON.stringify({ levels, cur })], {type:'application/json'}), 'doomcraft.json');
+  $('stMsg').textContent = 'project saved';
+};
+$('btnLoad').onclick = () => $('fileInput').click();
+$('fileInput').onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  f.text().then(txt => {
+    try {
+      const j = JSON.parse(txt);
+      if (!j.levels && !(j.grid && j.W && j.D)) throw 0;
+      adoptProject(j);
+      $('stMsg').textContent = 'project loaded';
+    } catch { alert('Not a valid Doomcraft/DoomBlocks project.'); }
+  });
+  e.target.value = '';
+};
+$('btnNew').onclick = () => {
+  if (!confirm('Start a new map? Unsaved changes will be lost.')) return;
+  levels = [freshLevel()]; cur = 0;
+  applyLevelState(levels[0]);
+  refreshView();
+  $('stMsg').textContent = 'new map';
+};
+$('btnUndo').onclick = () => { undo(); $('stMsg').textContent = 'undo'; };
+$('ceilH').onchange = rebuild;
+$('sky').onchange = () => {
+  autosave();
+  if (gl.sky) { gl.scene.remove(gl.sky); gl.sky.geometry.dispose(); gl.sky = null; }
+  makeSky();
+  rebuild();
+};
+
+// ================= IWAD graphics (optional) =================
+// Loading the user's own doom2.wad enables real textures on blocks and real
+// sprites for things. Everything falls back to colored shapes without it.
+let iwad = null;    // { dv, u8, lumps, pal, texDefs, pnames, flats:{}, walls:{}, sprites:{} }
+let matCache = {};
+const SPRITES = {   // thing type -> sprite lump (missing lumps just fall back)
+  1:'PLAYA1',2:'PLAYA1',3:'PLAYA1',4:'PLAYA1',11:'PLAYA1',
+  3004:'POSSA1',9:'SPOSA1',65:'CPOSA1',84:'SSWVA1',3001:'TROOA1',3002:'SARGA1',58:'SARGA1',
+  3006:'SKULA1',3005:'HEADA1',69:'BOS2A1',3003:'BOSSA1',66:'SKELA1',67:'FATTA1',68:'BSPIA1',
+  71:'PAINA1',64:'VILEA1',7:'SPIDA1D1',16:'CYBRA1',
+  2001:'SHOTA0',82:'SGN2A0',2002:'MGUNA0',2003:'LAUNA0',2004:'PLASA0',2005:'CSAWA0',2006:'BFUGA0',
+  2007:'CLIPA0',2048:'AMMOA0',2008:'SHELA0',2049:'SBOXA0',2010:'ROCKA0',2046:'BROKA0',2047:'CELLA0',17:'CELPA0',8:'BPAKA0',
+  2011:'STIMA0',2012:'MEDIA0',2014:'BON1A0',2015:'BON2A0',2018:'ARM1A0',2019:'ARM2A0',
+  2013:'SOULA0',83:'MEGAA0',2022:'PINVA0',2023:'PSTRA0',2024:'PINSA0',2025:'SUITA0',2026:'PMAPA0',2045:'PVISA0',
+  5:'BKEYA0',40:'BSKUA0',6:'YKEYA0',39:'YSKUA0',13:'RKEYA0',38:'RSKUA0',
+  2035:'BAR1A0',2028:'COLUA0',34:'CANDA0',35:'CBRAA0',44:'TBLUA0',45:'TGRNA0',46:'TREDA0',
+  48:'ELECA0',30:'COL1A0',32:'COL3A0',41:'CEYEA0',43:'TRE1A0',54:'TRE2A0',15:'PLAYN0',10:'PLAYW0',
+  25:'POL1A0',26:'POL6A0',27:'POL4A0',28:'POL2A0',29:'POL3A0',
+  63:'GOR1A0',59:'GOR2A0',61:'GOR3A0',60:'GOR4A0',62:'GOR5A0',
+  88:'BBRNA0',72:'KEENA0',
+};
+const HANGING = new Set([63,59,61,60,62,72]);
+function parseIwad(buf) {
+  const dv = new DataView(buf), u8 = new Uint8Array(buf);
+  const magic = String.fromCharCode(u8[0],u8[1],u8[2],u8[3]);
+  if (magic !== 'IWAD' && magic !== 'PWAD') throw new Error('not a WAD');
+  const n = dv.getInt32(4, true), dirOfs = dv.getInt32(8, true);
+  const lumps = {};
+  const nameAt = o => {
+    let s = '';
+    for (let i=0;i<8;i++) { const b = u8[o+i]; if (!b) break; s += String.fromCharCode(b); }
+    return s.toUpperCase();
+  };
+  for (let i=0;i<n;i++) {
+    const o = dirOfs + i*16;
+    lumps[nameAt(o+8)] = [dv.getInt32(o, true), dv.getInt32(o+4, true)];
+  }
+  if (!lumps.PLAYPAL) throw new Error('no PLAYPAL — not a Doom IWAD');
+  const pal = u8.slice(lumps.PLAYPAL[0], lumps.PLAYPAL[0] + 768);
+  return { dv, u8, lumps, pal, texDefs: null, pnames: null, flats:{}, walls:{}, sprites:{} };
+}
+function mkTex(canvas) {
+  const t = new THREE.CanvasTexture(canvas);
+  t.magFilter = THREE.NearestFilter;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+function decodePic(ofs) {  // Doom picture format -> canvas (transparent bg)
+  const dv = iwad.dv, u8 = iwad.u8, pal = iwad.pal;
+  const w = dv.getUint16(ofs, true), h = dv.getUint16(ofs+2, true);
+  if (!w || !h || w > 2048 || h > 2048) return null;
+  const cv = document.createElement('canvas');
+  cv.width = w; cv.height = h;
+  const ctx = cv.getContext('2d');
+  const img = ctx.createImageData(w, h);
+  for (let x=0;x<w;x++) {
+    let p = ofs + dv.getUint32(ofs + 8 + x*4, true);
+    for (;;) {
+      const top = u8[p];
+      if (top === 255) break;
+      const len = u8[p+1];
+      p += 3;
+      for (let j=0;j<len;j++) {
+        const y = top + j;
+        if (y < h) {
+          const pi = u8[p]*3, di = (y*w + x)*4;
+          img.data[di] = pal[pi]; img.data[di+1] = pal[pi+1]; img.data[di+2] = pal[pi+2]; img.data[di+3] = 255;
+        }
+        p++;
+      }
+      p++;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  return { canvas: cv, w, h };
+}
+function getFlat(name) {
+  if (!iwad) return null;
+  if (name in iwad.flats) return iwad.flats[name];
+  const l = iwad.lumps[name];
+  if (!l || l[1] < 4096) return iwad.flats[name] = null;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 64;
+  const ctx = cv.getContext('2d');
+  const img = ctx.createImageData(64, 64);
+  for (let i=0;i<4096;i++) {
+    const pi = iwad.u8[l[0]+i]*3;
+    img.data[i*4] = iwad.pal[pi]; img.data[i*4+1] = iwad.pal[pi+1];
+    img.data[i*4+2] = iwad.pal[pi+2]; img.data[i*4+3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  return iwad.flats[name] = { tex: mkTex(cv), w: 64, h: 64 };
+}
+function parseTexDefs() {
+  const dv = iwad.dv;
+  iwad.pnames = [];
+  const pn = iwad.lumps.PNAMES;
+  if (pn) {
+    const cnt = dv.getInt32(pn[0], true);
+    for (let i=0;i<cnt;i++) {
+      let s = '';
+      for (let j=0;j<8;j++) { const b = iwad.u8[pn[0]+4+i*8+j]; if (!b) break; s += String.fromCharCode(b); }
+      iwad.pnames.push(s.toUpperCase());
+    }
+  }
+  iwad.texDefs = {};
+  for (const lname of ['TEXTURE1','TEXTURE2']) {
+    const l = iwad.lumps[lname];
+    if (!l) continue;
+    const base = l[0], cnt = dv.getInt32(base, true);
+    for (let i=0;i<cnt;i++) {
+      const o = base + dv.getInt32(base + 4 + i*4, true);
+      let s = '';
+      for (let j=0;j<8;j++) { const b = iwad.u8[o+j]; if (!b) break; s += String.fromCharCode(b); }
+      const np = dv.getUint16(o+20, true);
+      const patches = [];
+      for (let p=0;p<np;p++) {
+        const po = o + 22 + p*10;
+        patches.push({ x: dv.getInt16(po, true), y: dv.getInt16(po+2, true), p: dv.getUint16(po+4, true) });
+      }
+      iwad.texDefs[s.toUpperCase()] = { w: dv.getUint16(o+12, true), h: dv.getUint16(o+14, true), patches };
+    }
+  }
+}
+function getWall(name) {
+  if (!iwad) return null;
+  if (name in iwad.walls) return iwad.walls[name];
+  if (!iwad.texDefs) parseTexDefs();
+  const def = iwad.texDefs[name];
+  if (!def) return iwad.walls[name] = null;
+  const cv = document.createElement('canvas');
+  cv.width = def.w; cv.height = def.h;
+  const ctx = cv.getContext('2d');
+  for (const pt of def.patches) {
+    const pname = iwad.pnames[pt.p];
+    const l = pname && iwad.lumps[pname];
+    if (!l) continue;
+    const pic = decodePic(l[0]);
+    if (pic) ctx.drawImage(pic.canvas, pt.x, pt.y);
+  }
+  return iwad.walls[name] = { tex: mkTex(cv), w: def.w, h: def.h };
+}
+function getSprite(lname) {
+  if (!iwad) return null;
+  if (lname in iwad.sprites) return iwad.sprites[lname];
+  const l = iwad.lumps[lname];
+  if (!l) return iwad.sprites[lname] = null;
+  const pic = decodePic(l[0]);
+  if (!pic) return iwad.sprites[lname] = null;
+  const tex = mkTex(pic.canvas);
+  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+  return iwad.sprites[lname] = { mat: new THREE.SpriteMaterial({ map: tex, transparent: true }), w: pic.w, h: pic.h };
+}
+// the loaded IWAD is cached in IndexedDB so it survives page reloads
+const IDB = {
+  open() {
+    return new Promise((res, rej) => {
+      if (typeof indexedDB === 'undefined') { rej(new Error('no idb')); return; }
+      const q = indexedDB.open('doomblocks', 1);
+      q.onupgradeneeded = () => q.result.createObjectStore('files');
+      q.onsuccess = () => res(q.result);
+      q.onerror = () => rej(q.error);
+    });
+  },
+  async set(k, v) {
+    const db = await this.open();
+    return new Promise((res, rej) => {
+      const tx = db.transaction('files', 'readwrite');
+      tx.objectStore('files').put(v, k);
+      tx.oncomplete = res;
+      tx.onerror = () => rej(tx.error);
+    });
+  },
+  async get(k) {
+    const db = await this.open();
+    return new Promise((res, rej) => {
+      const rq = db.transaction('files').objectStore('files').get(k);
+      rq.onsuccess = () => res(rq.result);
+      rq.onerror = () => rej(rq.error);
+    });
+  },
+};
+function useIwad(buf, label) {
+  iwad = parseIwad(buf);
+  matCache = {};
+  $('btnIwad').textContent = 'IWAD ✓';
+  $('stMsg').textContent = label;
+  if (gl.ready) rebuild();
+}
+$('btnIwad').onclick = () => $('iwadFile').click();
+$('iwadFile').onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  f.arrayBuffer().then(buf => {
+    try {
+      useIwad(buf, f.name + ' loaded — real textures & sprites on');
+      IDB.set('iwad', buf).catch(() => {});   // cache for next visit (best effort)
+    } catch (err) { alert('Could not read that WAD: ' + err.message); }
+  });
+  e.target.value = '';
+};
+(async () => {   // restore a cached IWAD on startup
+  try {
+    const buf = await IDB.get('iwad');
+    if (buf) useIwad(buf, 'cached IWAD restored — real textures & sprites on');
+  } catch {}
+})();
+
+// ================= 3D view =================
+const gl = { ready:false };
+function initGL() {
+  const cv = $('cv'), wrap = $('canvasWrap');
+  gl.renderer = new THREE.WebGLRenderer({ canvas:cv, antialias:true });
+  gl.scene = new THREE.Scene();
+  gl.scene.background = new THREE.Color(0x15161b);
+  gl.camera = new THREE.PerspectiveCamera(55, 1, 10, 30000);
+  gl.scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+  const sun = new THREE.DirectionalLight(0xffffff, 0.65);
+  sun.position.set(0.5, 1, 0.3); gl.scene.add(sun);
+  makeScenery();
+  gl.ghost = new THREE.Mesh(new THREE.BoxGeometry(CS, 6, CS),
+    new THREE.MeshBasicMaterial({ color:0xffd24a, transparent:true, opacity:0.5, depthWrite:false }));
+  gl.ghost.visible = false; gl.scene.add(gl.ghost);
+  gl.ray = new THREE.Raycaster();
+  gl.ready = true;
+  const resize = () => {
+    const r = wrap.getBoundingClientRect();
+    gl.renderer.setPixelRatio(devicePixelRatio);
+    gl.renderer.setSize(r.width, r.height, false);
+    gl.camera.aspect = r.width/r.height;
+    gl.camera.updateProjectionMatrix();
+  };
+  window.addEventListener('resize', resize); resize();
+  bindDoomcraft(cv);
+  startDoomcraft();
+  let lastT = performance.now();
+  (function loop(t){
+    requestAnimationFrame(loop);
+    const now = t || lastT;
+    const dt = Math.min(0.05, (now - lastT)/1000);
+    lastT = now;
+    if (!menuOpen) walkStep(dt);
+    updateCrosshairOutline();
+    gl.renderer.render(gl.scene, gl.camera);
+  })(performance.now());
+}
+function makeScenery() { // grid lines + invisible picking plane, sized to the current map
+  if (gl.gridLines) { gl.scene.remove(gl.gridLines); gl.gridLines.geometry.dispose(); }
+  if (gl.ground) { gl.scene.remove(gl.ground); gl.ground.geometry.dispose(); }
+  const pts = [];
+  for (let x=0;x<=W;x++) pts.push(x*CS,0.5,0, x*CS,0.5,-D*CS);
+  for (let y=0;y<=D;y++) pts.push(0,0.5,-y*CS, W*CS,0.5,-y*CS);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pts,3));
+  gl.gridLines = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color:0x2e2e3a }));
+  gl.scene.add(gl.gridLines);
+  gl.ground = new THREE.Mesh(new THREE.PlaneGeometry(W*CS, D*CS),
+    new THREE.MeshBasicMaterial({ transparent:true, opacity:0, depthWrite:false }));
+  gl.ground.rotation.x = -Math.PI/2;
+  gl.ground.position.set(W*CS/2, -1, -D*CS/2);
+  gl.scene.add(gl.ground);
+}
+function colTop(c, ceil) { return (c.wall||c.exit||c.door) ? ceil : c.h*HU; }
+function rebuild() {
+  $('infoBlocks').textContent = grid.reduce((n,c)=>n+Math.ceil(c.h/2)+(c.wall||c.exit||c.door?1:0),0);
+  autosave();
+  refreshInfo();
+  if (!gl.ready) return;
+  if (gl.world) {
+    gl.scene.remove(gl.world);
+    gl.world.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+  }
+  if (gl.thingGroup) { gl.scene.remove(gl.thingGroup); }
+  const ceil = ceilUnits()*HU;
+  // faces are bucketed by material: real texture when an IWAD is loaded, flat color otherwise
+  const buckets = new Map();
+  function matInfo(key) {
+    if (matCache[key]) return matCache[key];
+    const [kind, name, colorHex] = key.split('|');
+    let t = null;
+    if (iwad) t = kind === 'F' ? getFlat(name) : getWall(name);
+    const info = t
+      ? { mat: new THREE.MeshLambertMaterial({ map: t.tex }), w: t.w, h: t.h }
+      : { mat: new THREE.MeshLambertMaterial({ color: colorHex }), w: 64, h: 64 };
+    return matCache[key] = info;
+  }
+  const B = key => {
+    let b = buckets.get(key);
+    if (!b) { b = { pos: [], uv: [], info: matInfo(key) }; buckets.set(key, b); }
+    return b;
+  };
+  const vert = (b, x, yy, ym, u, v) => { b.pos.push(x, yy, -ym); b.uv.push(u, v); };
+  const quadY = (key, x0, ym0, x1, ym1, yy) => {      // horizontal face (facing up)
+    const b = B(key), w = b.info.w, h = b.info.h;
+    vert(b, x0, yy, ym0, x0/w, ym0/h); vert(b, x1, yy, ym0, x1/w, ym0/h); vert(b, x1, yy, ym1, x1/w, ym1/h);
+    vert(b, x0, yy, ym0, x0/w, ym0/h); vert(b, x1, yy, ym1, x1/w, ym1/h); vert(b, x0, yy, ym1, x0/w, ym1/h);
+  };
+  const quadYD = (key, x0, ym0, x1, ym1, yy) => {     // horizontal face (facing down: ceilings)
+    const b = B(key), w = b.info.w, h = b.info.h;
+    vert(b, x0, yy, ym0, x0/w, ym0/h); vert(b, x1, yy, ym1, x1/w, ym1/h); vert(b, x1, yy, ym0, x1/w, ym0/h);
+    vert(b, x0, yy, ym0, x0/w, ym0/h); vert(b, x0, yy, ym1, x0/w, ym1/h); vert(b, x1, yy, ym1, x1/w, ym1/h);
+  };
+  const quadV = (key, ax, aym, bx, bym, y0, y1) => {  // vertical face
+    const b = B(key), w = b.info.w, h = b.info.h;
+    const uA = (ax === bx ? aym : ax)/w, uB = (ax === bx ? bym : bx)/w;
+    // Doom pegs wall textures to the TOP of the surface, drawing downward
+    const vT = 1, vB = 1 - (y1 - y0)/h;
+    vert(b, ax, y0, aym, uA, vB); vert(b, bx, y0, bym, uB, vB); vert(b, bx, y1, bym, uB, vT);
+    vert(b, ax, y0, aym, uA, vB); vert(b, bx, y1, bym, uB, vT); vert(b, ax, y1, aym, uA, vT);
+  };
+  const shade = (hex, f) => '#' + [1,3,5].map(i =>
+    Math.round(parseInt(hex.slice(i,i+2),16)*f).toString(16).padStart(2,'0')).join('');
+  // floor height at a specific quarter-cell, honoring ¼×¼ sculpting (c.sh) — solid cells
+  // (wall/exit/door) are always ceil-height regardless of quarter, matching how the rest of
+  // this file treats them. sxi/syi outside 0..SUBN-1 are normalized into the neighboring
+  // cell, so this also transparently answers "what's just across this cell's edge."
+  function topAtSub(x, y, sxi, syi) {
+    while (sxi < 0) { sxi += SUBN; x--; }
+    while (sxi >= SUBN) { sxi -= SUBN; x++; }
+    while (syi < 0) { syi += SUBN; y--; }
+    while (syi >= SUBN) { syi -= SUBN; y++; }
+    if (!inb(x,y)) return 0;
+    const cc = grid[gi(x,y)];
+    if (cc.wall||cc.exit||cc.door) return ceil;
+    return Math.min(subFloorH(cc, sxi, syi)*HU, ceil);
+  }
+  for (let y=0;y<D;y++) for (let x=0;x<W;x++) {
+    const c = grid[gi(x,y)];
+    if (walk.on && c.door) {          // doors are animated meshes in walk mode
+      quadY('F|FLAT1|#6a6a70', x*CS, y*CS, (x+1)*CS, (y+1)*CS, Math.min(c.h*HU, ceil) + 0.01);
+      continue;
+    }
+    const isStruct = c.wall||c.exit||c.door;
+    const top = isStruct ? ceil : Math.min(c.h*HU, ceil);
+    let topKey, sideKey;
+    if (c.wall)      { const wm = WALLMATS[c.wmat||0]; topKey = sideKey = 'W|'+wm[1]+'|'+wm[2]; }
+    else if (c.exit) { topKey = sideKey = 'W|SW1COMP|#3fae5a'; }
+    else if (c.door) { const lk = LOCKS[c.lock||0]; topKey = sideKey = 'W|'+lk[1]+'|'+lk[2]; }   // locked doors show the full colored door skin
+    else {
+      const flat = isTp(c.thing) ? 'GATE' + (c.thing - TP_MIN + 1) : SURFS[c.surf][1];
+      const fcol = isTp(c.thing) ? '#8f7fd4' : SURFS[c.surf][2];
+      topKey = 'F|'+flat+'|'+fcol;
+      const wm = WALLMATS[c.wmat||0];
+      sideKey = 'W|'+wm[1]+'|'+shade(wm[2], 0.62);
+    }
+    const X0=x*CS, X1=(x+1)*CS, Y0=y*CS, Y1=(y+1)*CS;
+    if (!isStruct && (c.sh || c.ssurf)) {
+      // ¼×¼-sculpted floor: 16 quarter-cell quads instead of one whole-cell quad. Texture is
+      // also looked up per sub-cell (subSurf) rather than reusing the whole-cell topKey, so a
+      // Vector Select shape that only partly covers this cell (c.ssurf) renders its texture
+      // stopping exactly at the shape's edge instead of covering the whole cell.
+      for (let syi=0; syi<SUBN; syi++) for (let sxi=0; sxi<SUBN; sxi++) {
+        const subTop = Math.min(subFloorH(c,sxi,syi)*HU, ceil);
+        const si = subSurf(c, sxi, syi);
+        const subFlat = isTp(c.thing) ? 'GATE' + (c.thing - TP_MIN + 1) : SURFS[si][1];
+        const subFcol = isTp(c.thing) ? '#8f7fd4' : SURFS[si][2];
+        quadY('F|'+subFlat+'|'+subFcol, X0+sxi*SS, Y0+syi*SS, X0+(sxi+1)*SS, Y0+(syi+1)*SS, subTop + 0.01);
+      }
+    } else {
+      quadY(topKey, X0, Y0, X1, Y1, top + (isStruct?0:0.01));
+    }
+    // side faces where this column is taller than neighbor
+    if (!isStruct && c.sh) {
+      // ¼×¼-sculpted floor: walk every quarter-cell's 4 sub-neighbors individually. This
+      // covers BOTH internal seams within this same cell (e.g. a checkerboard sculpt) and
+      // seams against an adjacent cell — topAtSub transparently crosses cell edges. Only
+      // ever draws from the taller side (same rule as the whole-cell path below), so
+      // intra-cell seams never get drawn twice.
+      for (let syi=0; syi<SUBN; syi++) for (let sxi=0; sxi<SUBN; sxi++) {
+        const hereTop = topAtSub(x, y, sxi, syi);
+        const sdirs = [
+          [1,0,  X0+(sxi+1)*SS, Y0+syi*SS,     X0+(sxi+1)*SS, Y0+(syi+1)*SS],
+          [-1,0, X0+sxi*SS,     Y0+(syi+1)*SS, X0+sxi*SS,     Y0+syi*SS],
+          [0,1,  X0+(sxi+1)*SS, Y0+(syi+1)*SS, X0+sxi*SS,     Y0+(syi+1)*SS],
+          [0,-1, X0+sxi*SS,     Y0+syi*SS,     X0+(sxi+1)*SS, Y0+syi*SS],
+        ];
+        for (const [dsx,dsy,ax,ay,bx,by] of sdirs) {
+          const nTop = topAtSub(x, y, sxi+dsx, syi+dsy);
+          if (hereTop > nTop) quadV(sideKey, ax, ay, bx, by, nTop, hereTop);
+        }
+      }
+    } else {
+      const nb = [[1,0,X1,Y0,X1,Y1],[ -1,0,X0,Y1,X0,Y0],[0,1,X1,Y1,X0,Y1],[0,-1,X0,Y0,X1,Y0]];
+      for (const [dx,dy,ax,ay,bx,by] of nb) {
+        const n = inb(x+dx,y+dy) ? grid[gi(x+dx,y+dy)] : null;
+        const nSub = n && !(n.wall||n.exit||n.door) && !!n.sh;
+        if (nSub) {
+          // the sculpted neighbor draws its own taller-side faces when the outer loop
+          // visits it; this (plain) cell only needs to draw where IT is taller, checked
+          // per quarter along the shared edge — mirrors the sculpted cell's own scan above.
+          for (let k=0; k<SUBN; k++) {
+            let nsxi, nsyi, pax, pay, pbx, pby;
+            if (dx === 1)       { nsxi=0; nsyi=k; pax=X1; pay=Y0+k*SS; pbx=X1; pby=Y0+(k+1)*SS; }
+            else if (dx === -1) { nsxi=SUBN-1; nsyi=SUBN-1-k; pax=X0; pay=Y1-k*SS; pbx=X0; pby=Y1-(k+1)*SS; }
+            else if (dy === 1)  { nsxi=SUBN-1-k; nsyi=0; pax=X1-k*SS; pay=Y1; pbx=X1-(k+1)*SS; pby=Y1; }
+            else                { nsxi=k; nsyi=SUBN-1; pax=X0+k*SS; pay=Y0; pbx=X0+(k+1)*SS; pby=Y0; }
+            const nTop = topAtSub(x+dx, y+dy, nsxi, nsyi);
+            if (top > nTop) quadV(sideKey, pax, pay, pbx, pby, nTop, top);
+          }
+        } else {
+          const nTop = n ? (n.wall||n.exit||n.door ? ceil : Math.min(n.h*HU, ceil)) : 0;
+          if (top > nTop) quadV(sideKey, ax, ay, bx, by, nTop, top);
+        }
+      }
+    }
+  }
+  if (walk.on) {                     // walk mode: border walls + ceilings (orbit view omits them)
+    const bwm = WALLMATS[Math.min(+$('borderSel').value||0, BASE_WALLS-1)];
+    const bKey = 'W|'+bwm[1]+'|'+bwm[2];
+    const WCS = W*CS, DCS = D*CS;
+    for (let x=0;x<W;x++) {
+      quadV(bKey, (x+1)*CS, 0, x*CS, 0, 0, ceil);          // south edge, faces into the map
+      quadV(bKey, x*CS, DCS, (x+1)*CS, DCS, 0, ceil);      // north edge
+    }
+    for (let y=0;y<D;y++) {
+      quadV(bKey, 0, y*CS, 0, (y+1)*CS, 0, ceil);          // west edge
+      quadV(bKey, WCS, (y+1)*CS, WCS, y*CS, 0, ceil);      // east edge
+    }
+    {
+      const noSky = !$('sky').value;
+      const ceilAt = c => c.door ? ceil : ceil - (c.ch||0)*HU;   // doors ignore ch — see Ceiling tool
+      // ceiling height at a specific quarter-cell, honoring ¼×¼ sculpting (c.sch) — sxi/syi
+      // outside 0..SUBN-1 are normalized into the neighboring cell, same as topAtSub.
+      function ceilAtSub(x, y, sxi, syi) {
+        while (sxi < 0) { sxi += SUBN; x--; }
+        while (sxi >= SUBN) { sxi -= SUBN; x++; }
+        while (syi < 0) { syi += SUBN; y--; }
+        while (syi >= SUBN) { syi -= SUBN; y++; }
+        if (!inb(x,y)) return ceil;
+        const cc = grid[gi(x,y)];
+        if (cc.wall||cc.exit||cc.door) return ceil;
+        return ceil - subCeilCh(cc, sxi, syi)*HU;
+      }
+      for (let y=0;y<D;y++) for (let x=0;x<W;x++) {
+        const c = grid[gi(x,y)];
+        if (c.wall || c.exit) continue;
+        const cTop = ceilAt(c);
+        const X0=x*CS, X1=(x+1)*CS, Y0=y*CS, Y1=(y+1)*CS;
+        // Sky levels never show a solid ceiling flat (the real engine draws sky there
+        // instead, regardless of height) — but a lowered cell still borders a genuine
+        // wall below its neighbor's real ceiling, so that step still renders either way.
+        if (noSky) {
+          if (!c.door && c.sch) {
+            for (let syi=0; syi<SUBN; syi++) for (let sxi=0; sxi<SUBN; sxi++) {
+              const cm = CEILMATS[c.cmat||0];
+              quadYD('F|'+cm[1]+'|'+cm[2], X0+sxi*SS, Y0+syi*SS, X0+(sxi+1)*SS, Y0+(syi+1)*SS, ceilAtSub(x,y,sxi,syi));
+            }
+          } else {
+            const cm = CEILMATS[c.cmat||0];
+            quadYD('F|'+cm[1]+'|'+cm[2], X0, Y0, X1, Y1, cTop);
+          }
+        }
+        if ((c.ch || c.sch) && !c.door) {   // step down to a lowered ceiling: show the wall face for the gap
+          const wm = WALLMATS[c.wmat||0], wallKey = 'W|'+wm[1]+'|'+wm[2];
+          if (c.sch) {
+            // ¼×¼-sculpted ceiling: walk every quarter-cell's 4 sub-neighbors — covers both
+            // internal seams within this same cell and seams against an adjacent OPEN cell
+            // (no collar against a wall/door/map-edge neighbor, matching the plain rule below).
+            for (let syi=0; syi<SUBN; syi++) for (let sxi=0; sxi<SUBN; sxi++) {
+              const hereCeil = ceilAtSub(x, y, sxi, syi);
+              const sdirs = [
+                [1,0,  X0+(sxi+1)*SS, Y0+syi*SS,     X0+(sxi+1)*SS, Y0+(syi+1)*SS],
+                [-1,0, X0+sxi*SS,     Y0+(syi+1)*SS, X0+sxi*SS,     Y0+syi*SS],
+                [0,1,  X0+(sxi+1)*SS, Y0+(syi+1)*SS, X0+sxi*SS,     Y0+(syi+1)*SS],
+                [0,-1, X0+sxi*SS,     Y0+syi*SS,     X0+(sxi+1)*SS, Y0+syi*SS],
+              ];
+              for (const [dsx,dsy,ax,ay,bx,by] of sdirs) {
+                const crossesX = sxi+dsx < 0 || sxi+dsx >= SUBN, crossesY = syi+dsy < 0 || syi+dsy >= SUBN;
+                if (crossesX || crossesY) {
+                  const nx = x + (crossesX ? dsx : 0), ny = y + (crossesY ? dsy : 0);
+                  const n = inb(nx,ny) ? grid[gi(nx,ny)] : null;
+                  if (!n || n.wall || n.exit || n.door) continue;   // door's own frame covers that side
+                }
+                const nCeil = ceilAtSub(x, y, sxi+dsx, syi+dsy);
+                if (nCeil > hereCeil) quadV(wallKey, ax, ay, bx, by, hereCeil, nCeil);
+              }
+            }
+          } else {
+            const nbc = [[1,0,X1,Y0,X1,Y1],[-1,0,X0,Y1,X0,Y0],[0,1,X1,Y1,X0,Y1],[0,-1,X0,Y0,X1,Y0]];
+            for (const [dx,dy,ax,ay,bx,by] of nbc) {
+              const n = inb(x+dx,y+dy) ? grid[gi(x+dx,y+dy)] : null;
+              if (!n || n.wall || n.exit || n.door) continue;   // door's own frame covers that side
+              if (n.sch) {
+                // sculpted neighbor: check each quarter along the shared edge — segments
+                // where the neighbor is still higher than "here" need HERE's own collar
+                // (segments where the neighbor is lower are drawn by ITS OWN scan above).
+                for (let k=0; k<SUBN; k++) {
+                  let nsxi, nsyi, pax, pay, pbx, pby;
+                  if (dx === 1)       { nsxi=0; nsyi=k; pax=X1; pay=Y0+k*SS; pbx=X1; pby=Y0+(k+1)*SS; }
+                  else if (dx === -1) { nsxi=SUBN-1; nsyi=SUBN-1-k; pax=X0; pay=Y1-k*SS; pbx=X0; pby=Y1-(k+1)*SS; }
+                  else if (dy === 1)  { nsxi=SUBN-1-k; nsyi=0; pax=X1-k*SS; pay=Y1; pbx=X1-(k+1)*SS; pby=Y1; }
+                  else                { nsxi=k; nsyi=SUBN-1; pax=X0+k*SS; pay=Y0; pbx=X0+(k+1)*SS; pby=Y0; }
+                  const nCeil = ceilAtSub(x+dx, y+dy, nsxi, nsyi);
+                  if (nCeil > cTop) quadV(wallKey, pax, pay, pbx, pby, cTop, nCeil);
+                }
+              } else {
+                const nTop = ceilAt(n);
+                if (nTop > cTop) quadV(wallKey, ax, ay, bx, by, cTop, nTop);
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  gl.world = new THREE.Group();
+  for (const b of buckets.values()) {
+    if (!b.pos.length) continue;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(b.pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(b.uv, 2));
+    g.computeVertexNormals();
+    gl.world.add(new THREE.Mesh(g, b.info.mat));
+  }
+  gl.scene.add(gl.world);
+  // dynamic door slabs (walk mode only) — a locked door's whole face uses its colored skin.
+  if (gl.doorGroup) {
+    gl.scene.remove(gl.doorGroup);
+    gl.doorGroup.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+    gl.doorGroup = null;
+  }
+  if (walk.on) {
+    gl.doorGroup = new THREE.Group();
+    for (let y=0;y<D;y++) for (let x=0;x<W;x++) {
+      const dc = grid[gi(x,y)];
+      if (!dc.door) continue;
+      const dlk = LOCKS[dc.lock||0];
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(CS, ceil, CS), matInfo('W|'+dlk[1]+'|'+dlk[2]).mat);
+      mesh.position.set(x*CS+CS/2, ceil/2, -(y*CS+CS/2));
+      mesh.userData.doorKey = x+','+y;
+      walk.doors[x+','+y] = walk.doors[x+','+y] || { frac:0, state:'closed', hold:0 };
+      gl.doorGroup.add(mesh);
+    }
+    gl.scene.add(gl.doorGroup);
+  }
+  // headroom warning: tint cells red where the player (56 tall) can't fit
+  if (gl.warn) { gl.scene.remove(gl.warn); gl.warn.geometry.dispose(); }
+  const wpos = [];
+  for (let y=0;y<D;y++) for (let x=0;x<W;x++) {
+    const c = grid[gi(x,y)];
+    if (c.wall || c.exit || c.door) continue;
+    if (c.sh || c.sch) {
+      // ¼×¼-sculpted: check headroom per quarter-cell, tinting only the cramped quarters
+      for (let syi=0; syi<SUBN; syi++) for (let sxi=0; sxi<SUBN; sxi++) {
+        const subTop = Math.min(subFloorH(c,sxi,syi)*HU, ceil);
+        const subCeil = ceil - subCeilCh(c,sxi,syi)*HU;
+        if (subCeil - subTop >= 56) continue;
+        const X0=x*CS+sxi*SS, X1=X0+SS, Z0=-(y*CS+syi*SS), Z1=-(y*CS+(syi+1)*SS), Y=subTop+0.6;
+        wpos.push(X0,Y,Z0, X1,Y,Z0, X1,Y,Z1,  X0,Y,Z0, X1,Y,Z1, X0,Y,Z1);
+      }
+      continue;
+    }
+    const top = Math.min(c.h*HU, ceil);
+    if ((ceil - (c.ch||0)*HU) - top >= 56) continue;   // a lowered ceiling can also cramp headroom
+    const X0=x*CS, X1=(x+1)*CS, Z0=-(y*CS), Z1=-((y+1)*CS), Y=top+0.6;
+    wpos.push(X0,Y,Z0, X1,Y,Z0, X1,Y,Z1,  X0,Y,Z0, X1,Y,Z1, X0,Y,Z1);
+  }
+  const wg = new THREE.BufferGeometry();
+  wg.setAttribute('position', new THREE.Float32BufferAttribute(wpos,3));
+  gl.warn = new THREE.Mesh(wg, new THREE.MeshBasicMaterial({
+    color:0xff4040, transparent:true, opacity:0.35, depthWrite:false, side:THREE.DoubleSide }));
+  gl.scene.add(gl.warn);
+  gl.warn.visible = !walk.on;
+  // ceiling-drop indicator: orbit mode never draws real ceilings (so you can see into
+  // rooms from above), so a lowered ceiling (the Ceiling tool) is otherwise invisible
+  // there — walk mode already renders it for real. Show a softened preview of the real
+  // cap + collar at the dropped height instead, only where the ceiling was actually
+  // lowered. On a Sky level there's no real ceiling material to preview (Sky always
+  // wins), so that case just gets a plain, very faint blue tint instead.
+  if (gl.ceilDrop) {
+    gl.scene.remove(gl.ceilDrop);
+    gl.ceilDrop.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+  }
+  gl.ceilDrop = new THREE.Group();
+  // Orbit mode's ceiling-drop preview is already an approximation (a translucent stand-in for
+  // the real thing, which only Walk mode renders exactly) — for a ¼×¼-sculpted ceiling, this
+  // preview just shows the most-dropped quarter's height for the whole cell, so it never
+  // undersells how low the ceiling gets anywhere in that cell. Switch to Walk for the real,
+  // per-quarter shape.
+  const ceilAt2 = c => c.door ? ceil : c.sch ? ceil - Math.max(...c.sch)*HU : ceil - (c.ch||0)*HU;
+  const skyOn = !!$('sky').value;
+  if (skyOn) {
+    const cdPos = [];
+    for (let y=0;y<D;y++) for (let x=0;x<W;x++) {
+      const c = grid[gi(x,y)];
+      if (c.wall || c.exit || c.door || (!c.ch && !c.sch)) continue;
+      const cTop = ceilAt2(c);
+      const X0=x*CS, X1=(x+1)*CS, Y0=y*CS, Y1=(y+1)*CS;
+      cdPos.push(X0,cTop,-Y0, X1,cTop,-Y0, X1,cTop,-Y1,  X0,cTop,-Y0, X1,cTop,-Y1, X0,cTop,-Y1);
+      const nbc = [[1,0,X1,Y0,X1,Y1],[-1,0,X0,Y1,X0,Y0],[0,1,X1,Y1,X0,Y1],[0,-1,X0,Y0,X1,Y0]];
+      for (const [dx,dy,ax,ay,bx,by] of nbc) {
+        const n = inb(x+dx,y+dy) ? grid[gi(x+dx,y+dy)] : null;
+        if (!n || n.wall || n.exit || n.door) continue;
+        const nTop = ceilAt2(n);
+        if (nTop <= cTop) continue;
+        cdPos.push(ax,cTop,-ay, bx,cTop,-by, bx,nTop,-by,  ax,cTop,-ay, bx,nTop,-by, ax,nTop,-ay);
+      }
+    }
+    if (cdPos.length) {
+      const cdg = new THREE.BufferGeometry();
+      cdg.setAttribute('position', new THREE.Float32BufferAttribute(cdPos, 3));
+      gl.ceilDrop.add(new THREE.Mesh(cdg, new THREE.MeshBasicMaterial({
+        color:0x4ac3ff, transparent:true, opacity:0.14, depthWrite:false, side:THREE.DoubleSide })));
+    }
+  } else {
+    const cdBuckets = new Map();
+    const cdB = key => {
+      let b = cdBuckets.get(key);
+      if (!b) { b = { pos:[], uv:[], info: matInfo(key) }; cdBuckets.set(key, b); }
+      return b;
+    };
+    const cdCapUV = (b, x0, ym0, x1, ym1) => {
+      const w = b.info.w, h = b.info.h;
+      b.uv.push(x0/w,ym0/h, x1/w,ym0/h, x1/w,ym1/h,  x0/w,ym0/h, x1/w,ym1/h, x0/w,ym1/h);
+    };
+    for (let y=0;y<D;y++) for (let x=0;x<W;x++) {
+      const c = grid[gi(x,y)];
+      if (c.wall || c.exit || c.door || (!c.ch && !c.sch)) continue;
+      const cTop = ceilAt2(c);
+      const X0=x*CS, X1=(x+1)*CS, Y0=y*CS, Y1=(y+1)*CS;
+      const cm = CEILMATS[c.cmat||0], capB = cdB('F|'+cm[1]+'|'+cm[2]);
+      capB.pos.push(X0,cTop,-Y0, X1,cTop,-Y0, X1,cTop,-Y1,  X0,cTop,-Y0, X1,cTop,-Y1, X0,cTop,-Y1);
+      cdCapUV(capB, X0, Y0, X1, Y1);
+      const wm = WALLMATS[c.wmat||0], wallB = cdB('W|'+wm[1]+'|'+wm[2]);
+      const ww = wallB.info.w, wh = wallB.info.h;
+      const nbc = [[1,0,X1,Y0,X1,Y1],[-1,0,X0,Y1,X0,Y0],[0,1,X1,Y1,X0,Y1],[0,-1,X0,Y0,X1,Y0]];
+      for (const [dx,dy,ax,ay,bx,by] of nbc) {
+        const n = inb(x+dx,y+dy) ? grid[gi(x+dx,y+dy)] : null;
+        if (!n || n.wall || n.exit || n.door) continue;
+        const nTop = ceilAt2(n);
+        if (nTop <= cTop) continue;
+        wallB.pos.push(ax,cTop,-ay, bx,cTop,-by, bx,nTop,-by,  ax,cTop,-ay, bx,nTop,-by, ax,nTop,-ay);
+        const u0 = (ax===bx ? ay : ax)/ww, u1 = (ax===bx ? by : bx)/ww;
+        const v0 = 1, v1 = 1 - (nTop-cTop)/wh;
+        wallB.uv.push(u0,v0, u1,v0, u1,v1,  u0,v0, u1,v1, u0,v1);
+      }
+    }
+    for (const [key, b] of cdBuckets) {
+      if (!b.pos.length) continue;
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(b.pos, 3));
+      g.setAttribute('uv', new THREE.Float32BufferAttribute(b.uv, 2));
+      const base = b.info.mat;
+      const mat = base.map
+        ? new THREE.MeshBasicMaterial({ map: base.map, transparent:true, opacity:0.55, depthWrite:false, side:THREE.DoubleSide })
+        : new THREE.MeshBasicMaterial({ color: base.color, transparent:true, opacity:0.55, depthWrite:false, side:THREE.DoubleSide });
+      gl.ceilDrop.add(new THREE.Mesh(g, mat));
+    }
+  }
+  gl.scene.add(gl.ceilDrop);
+  gl.ceilDrop.visible = !walk.on;
+  // border-wall preview: orbit mode never draws the outer boundary (walk mode adds it as
+  // real solid geometry above, folded into gl.world), so looking down from orbit gives no
+  // cue at all for where the map's edge actually is. Show a translucent ring using the
+  // real border texture so the boundary reads clearly without blocking the overhead view.
+  if (gl.borderPreview) {
+    gl.scene.remove(gl.borderPreview);
+    gl.borderPreview.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+  }
+  gl.borderPreview = new THREE.Group();
+  {
+    const bwm = WALLMATS[Math.min(+$('borderSel').value||0, BASE_WALLS-1)];
+    const bInfo = matInfo('W|'+bwm[1]+'|'+bwm[2]);
+    const bw = bInfo.w, bh = bInfo.h;
+    const bpPos = [], bpUV = [];
+    const WCS = W*CS, DCS = D*CS;
+    const vT = 1, vB = 1 - ceil/bh;
+    const seg = (ax, ay, bx, by) => {
+      const uA = (ax === bx ? ay : ax)/bw, uB = (ax === bx ? by : bx)/bw;
+      bpPos.push(ax,0,-ay, bx,0,-by, bx,ceil,-by,  ax,0,-ay, bx,ceil,-by, ax,ceil,-ay);
+      bpUV.push(uA,vB, uB,vB, uB,vT,  uA,vB, uB,vT, uA,vT);
+    };
+    for (let x=0;x<W;x++) {
+      seg((x+1)*CS, 0, x*CS, 0);          // south edge, faces into the map
+      seg(x*CS, DCS, (x+1)*CS, DCS);      // north edge
+    }
+    for (let y=0;y<D;y++) {
+      seg(0, y*CS, 0, (y+1)*CS);          // west edge
+      seg(WCS, (y+1)*CS, WCS, y*CS);      // east edge
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(bpPos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(bpUV, 2));
+    const mat = bInfo.mat.map
+      ? new THREE.MeshBasicMaterial({ map: bInfo.mat.map, transparent:true, opacity:0.45, depthWrite:false, side:THREE.DoubleSide })
+      : new THREE.MeshBasicMaterial({ color: bInfo.mat.color, transparent:true, opacity:0.45, depthWrite:false, side:THREE.DoubleSide });
+    gl.borderPreview.add(new THREE.Mesh(g, mat));
+  }
+  gl.scene.add(gl.borderPreview);
+  gl.borderPreview.visible = !walk.on;
+  if (gl.gridLines) gl.gridLines.visible = !walk.on;
+  // things
+  gl.thingGroup = new THREE.Group();
+  for (let y=0;y<D;y++) for (let x=0;x<W;x++) {
+    const c = grid[gi(x,y)];
+    if (!c.thing) continue;
+    const color = TPCOLORS[c.thing] ?? KEYCOLORS[c.thing] ?? (c.thing===2035 ? 0x8f4f2f
+      : (THING_CATS[CAT_OF[c.thing]] || [0,0,0x4aa8ff])[2]);
+    const fl = Math.min(c.h*HU, ceil);
+    const spr = (iwad && SPRITES[c.thing]) ? getSprite(SPRITES[c.thing]) : null;
+    let grp;
+    if (spr) {                               // real game sprite, billboarded like in-engine
+      grp = new THREE.Group();
+      const s = new THREE.Sprite(c.thing === 58
+        ? new THREE.SpriteMaterial({ map: spr.mat.map, transparent: true, opacity: 0.45 })  // spectre
+        : spr.mat);
+      s.scale.set(spr.w, spr.h, 1);
+      s.position.y = HANGING.has(c.thing)
+        ? Math.max(spr.h/2, (ceil - fl) - spr.h/2)   // gore hangs from the ceiling
+        : spr.h/2;
+      grp.add(s);
+      const nose = new THREE.Mesh(new THREE.ConeGeometry(5, 14, 4),   // facing indicator
+        new THREE.MeshBasicMaterial({ color: 0xffd24a }));
+      nose.rotation.z = -Math.PI/2;
+      nose.position.set(20, 2.5, 0);
+      grp.add(nose);
+    } else {
+      grp = thingMesh(c.thing, color, ceil - fl);
+    }
+    grp.rotation.y = (c.ang ?? defAng(c.thing)) * Math.PI/180;
+    grp.position.set(x*CS+CS/2, fl, -(y*CS+CS/2));
+    grp.userData = { thing:true, x, y };
+    gl.thingGroup.add(grp);
+  }
+  // teleporter pair rings: pad and its destination share a color
+  for (let y=0;y<D;y++) for (let x=0;x<W;x++) {
+    const c = grid[gi(x,y)];
+    if (!c.tele) continue;
+    const isPadCell = !c.wall && !c.exit && !c.door && c.surf === TELE_IDX;
+    if (!isPadCell && c.thing !== 14) continue;
+    const col = new THREE.Color().setHSL((c.tele * 0.37) % 1, 0.75, 0.55);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(22, 2, 8, 24),
+      new THREE.MeshBasicMaterial({ color: col }));
+    ring.rotation.x = -Math.PI/2;
+    ring.position.set(x*CS+CS/2, Math.min(c.h*HU, ceil) + 1.5, -(y*CS+CS/2));
+    gl.thingGroup.add(ring);
+  }
+  gl.scene.add(gl.thingGroup);
+  updateVecHighlight();
+}
+// recognizable marker shapes per thing category, roughly to Doom scale
+function thingMesh(t, color, avail) {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshLambertMaterial({ color });
+  const rope = new THREE.MeshLambertMaterial({ color: 0x777777 });
+  const add = (geo, y, m, x, z) => {
+    const o = new THREE.Mesh(geo, m || mat);
+    o.position.set(x||0, y, z||0);
+    g.add(o); return o;
+  };
+  const nose = (x, y) => {
+    const n = add(new THREE.ConeGeometry(6, 16, 4), y, mat, x);
+    n.rotation.z = -Math.PI/2;
+  };
+  const cat = CAT_OF[t];
+  if (cat === 0) {                                     // starts: pad + beacon + arrow
+    add(new THREE.CylinderGeometry(18, 18, 4, 16), 2);
+    if (t === 14) { add(new THREE.CylinderGeometry(3, 3, 56, 8), 28); add(new THREE.SphereGeometry(6, 8, 6), 58); }
+    else add(new THREE.ConeGeometry(10, 36, 6), 22);
+    nose(22, 6);
+  } else if (cat === 1) {                              // enemies, scaled to real size
+    const [r, h] = EDIMS[t] || [20, 56];
+    // translucent footprint disc = the monster's true in-game radius (may span cells)
+    add(new THREE.CylinderGeometry(r, r, 1.5, 24), 0.8,
+      new THREE.MeshBasicMaterial({ color, transparent:true, opacity:0.22 }));
+    if (t===3005 || t===3006 || t===71) {              // flyers hover
+      const fr = Math.min(r, 28), fy = Math.max(34, fr + 14);
+      add(new THREE.SphereGeometry(fr, 10, 8), fy);
+      nose(fr + 8, fy);
+    } else if (t===7 || t===68) {                      // spider-types: dome + splayed legs to true radius
+      const dome = Math.min(r*0.5, 60);
+      add(new THREE.SphereGeometry(dome, 10, 6, 0, Math.PI*2, 0, Math.PI/2), h*0.3);
+      for (const a of [0.6, 2.5, 3.8, 5.7]) {
+        const leg = add(new THREE.BoxGeometry(4, h*0.55, 4), h*0.22, mat, Math.cos(a)*r*0.8, Math.sin(a)*r*0.8);
+        leg.rotation.z = Math.cos(a)*0.6; leg.rotation.x = -Math.sin(a)*0.6;
+      }
+      nose(r*0.8, h*0.4);
+    } else {                                           // humanoid: legs, torso, head
+      const rr = Math.min(r, 48);
+      add(new THREE.BoxGeometry(rr*0.9, h*0.4, rr*0.5), h*0.2);
+      add(new THREE.BoxGeometry(rr*1.3, h*0.35, rr*0.6), h*0.575);
+      add(new THREE.SphereGeometry(rr*0.4, 8, 6), h*0.85);
+      nose(rr*0.8, h*0.72);
+    }
+  } else if (cat === 2) {                              // weapons long & flat, ammo crates
+    if (new Set([2001,82,2002,2003,2004,2005,2006]).has(t)) add(new THREE.BoxGeometry(40, 6, 8), 5);
+    else { const s = new Set([2048,2049,2046,17,8]).has(t) ? 18 : 11; add(new THREE.BoxGeometry(s, s*0.7, s), s*0.35); }
+  } else if (cat === 3) {                              // pickups
+    if (new Set([2011,2012,2014,2023]).has(t)) { add(new THREE.BoxGeometry(20, 7, 7), 12); add(new THREE.BoxGeometry(7, 20, 7), 12); }
+    else if (new Set([2013,83,2022,2024,2045]).has(t)) add(new THREE.SphereGeometry(13, 10, 8), 16);
+    else if (t===2026) add(new THREE.BoxGeometry(20, 24, 2), 14).rotation.x = -0.4;
+    else add(new THREE.BoxGeometry(22, 26, 8), 14);    // armors, rad suit
+  } else if (cat === 4) {                              // keys: card or skull-on-post
+    if (t===38||t===39||t===40) { add(new THREE.CylinderGeometry(2, 2, 18, 6), 9); add(new THREE.SphereGeometry(8, 8, 6), 22); }
+    else add(new THREE.BoxGeometry(14, 22, 3), 14).rotation.y = 0.5;
+  } else if (cat === 5) {                              // decorations
+    if (t===2035) add(new THREE.CylinderGeometry(12, 12, 34, 10), 17, new THREE.MeshLambertMaterial({ color: 0x556644 }));
+    else if (new Set([2028,34,35,44,45,46]).has(t)) {
+      const glow = t===44 ? 0x6a8aff : t===45 ? 0x6aff8a : t===46 ? 0xff6a5a : 0xffe9a0;
+      const tall = t !== 34;
+      add(new THREE.CylinderGeometry(2.5, 4, tall?30:10, 8), tall?15:5);
+      add(new THREE.SphereGeometry(6, 8, 6), tall?34:12,
+        new THREE.MeshLambertMaterial({ color: glow, emissive: glow, emissiveIntensity: 0.6 }));
+    }
+    else if (new Set([48,30,32]).has(t)) add(new THREE.CylinderGeometry(10, 12, 44, 10), 22);
+    else if (t===41) { add(new THREE.ConeGeometry(10, 14, 8), 7); add(new THREE.SphereGeometry(9, 10, 8), 24); }
+    else if (t===25 || t===26) {           // impaled human: stake + slumped body
+      add(new THREE.CylinderGeometry(1.8, 2.5, 52, 6), 26, new THREE.MeshLambertMaterial({ color: 0x5a4630 }));
+      const flesh = new THREE.MeshLambertMaterial({ color: 0x9a7a6a });
+      const body = add(new THREE.BoxGeometry(12, 20, 8), 38, flesh);
+      body.rotation.z = t===26 ? 0.28 : 0.15;
+      add(new THREE.SphereGeometry(4.5, 8, 6), 50, flesh);
+    }
+    else if (t===27) {                     // skull on a pole
+      add(new THREE.CylinderGeometry(1.5, 2, 40, 6), 20, new THREE.MeshLambertMaterial({ color: 0x5a4630 }));
+      add(new THREE.SphereGeometry(5.5, 8, 6), 44, new THREE.MeshLambertMaterial({ color: 0xd8d0c0 }));
+    }
+    else if (t===28) {                     // five skulls shish kebab
+      add(new THREE.CylinderGeometry(1.5, 2, 52, 6), 26, new THREE.MeshLambertMaterial({ color: 0x5a4630 }));
+      const bone = new THREE.MeshLambertMaterial({ color: 0xd8d0c0 });
+      for (let i=0;i<5;i++) add(new THREE.SphereGeometry(4.5, 8, 6), 14 + i*9, bone);
+    }
+    else if (t===29) {                     // pile of skulls and candles
+      add(new THREE.ConeGeometry(13, 16, 8), 8, new THREE.MeshLambertMaterial({ color: 0xd8d0c0 }));
+      add(new THREE.SphereGeometry(3, 6, 5), 18, new THREE.MeshLambertMaterial({ color: 0xffe9a0, emissive: 0xffe9a0, emissiveIntensity: 0.5 }));
+    }
+    else if (t===43||t===54) {
+      const s = t===54 ? 1.5 : 1;
+      add(new THREE.CylinderGeometry(4*s, 6*s, 26*s, 8), 13*s, new THREE.MeshLambertMaterial({ color: 0x5a4630 }));
+      if (t===54) add(new THREE.ConeGeometry(20, 34, 8), 50, new THREE.MeshLambertMaterial({ color: 0x3f5a34 }));
+    }
+    else add(new THREE.BoxGeometry(30, 6, 18), 3);     // corpses & gibs lie flat
+  } else if (cat === 6) {                              // hanging gore: rope from ceiling
+    const y0 = Math.max(30, avail);
+    add(new THREE.CylinderGeometry(1.2, 1.2, 16, 6), y0 - 8, rope);
+    add(new THREE.BoxGeometry(10, 22, 8), y0 - 27);
+  } else if (cat === 7) {                              // boss & special
+    if (t===88) add(new THREE.SphereGeometry(18, 10, 8), 30);
+    else if (t===72) { const y0 = Math.max(30, avail); add(new THREE.CylinderGeometry(1.2, 1.2, 14, 6), y0 - 7, rope); add(new THREE.BoxGeometry(12, 20, 8), y0 - 24); }
+    else if (t===87) add(new THREE.CylinderGeometry(20, 20, 2, 16), 1);
+    else { add(new THREE.CylinderGeometry(2.5, 2.5, 30, 8), 15); add(new THREE.BoxGeometry(12, 10, 10), 34); }
+  } else if (cat === 8) {                              // teleporter: pad disc + glow beam
+    add(new THREE.CylinderGeometry(24, 24, 2.5, 20), 1.2);
+    const ring = add(new THREE.TorusGeometry(19, 2.5, 8, 24), 4);
+    ring.rotation.x = -Math.PI/2;
+    add(new THREE.CylinderGeometry(2, 2, 46, 8), 26,
+      new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.35 }));
+    add(new THREE.SphereGeometry(5, 8, 6), 50);
+    nose(28, 6);                                       // arrival facing
+  } else {
+    add(new THREE.ConeGeometry(16, 44, 5), 22);        // unknown type fallback
+  }
+  return g;
+}
+// selection info box
+let selCell = null;
+function refreshInfo() {}   // Doomcraft has no Select/Move click-to-inspect panel
+function updateVecHighlight() {}   // Vector Select was cut from Doomcraft; kept as a no-op so
+                                    // nothing breaks if anything still calls it defensively
+// crosshair-based targeting, the Minecraft-style replacement for DoomBlocks' mouse-position
+// pick(). Casts one ray straight out from the center of the screen every frame. Returns both
+// the cell/sub-cell actually being LOOKED AT (`hit`, used for breaking) and the cell/sub-cell
+// adjacent to whichever face was hit (`place`, used for building) — looking at a floor places
+// on that same cell, looking at the side of a block places in the empty space next to it,
+// exactly like Minecraft's block-placement rule.
+function crosshairPick() {
+  if (!gl.ready || !gl.world) return null;
+  // walkStep() just moved/rotated the camera this frame, but the renderer (which normally
+  // keeps matrixWorld current) hasn't run yet — without this the raycast would use last
+  // frame's camera transform instead of where the player is actually looking right now.
+  gl.camera.updateMatrixWorld();
+  gl.ray.setFromCamera({ x:0, y:0 }, gl.camera);
+  const hits = gl.ray.intersectObjects([gl.world, gl.ground], true);
+  if (!hits.length) return null;
+  const h = hits[0];
+  const n = h.face ? h.face.normal : new THREE.Vector3(0,1,0);
+  const nudged = h.point.clone().addScaledVector(n, -0.5);
+  const hx = Math.floor(nudged.x/CS), hy = Math.floor(-nudged.z/CS);
+  if (!inb(hx,hy)) return null;
+  const hsxi = Math.max(0, Math.min(SUBN-1, Math.floor((h.point.x - hx*CS)/SS)));
+  const hsyi = Math.max(0, Math.min(SUBN-1, Math.floor((-h.point.z - hy*CS)/SS)));
+  let px = hx, py = hy, psxi = hsxi, psyi = hsyi;
+  if (Math.abs(n.y) < 0.5) {          // side face: place adjacent, in the direction faced
+    const dgx = Math.round(n.x), dgy = Math.round(-n.z);
+    if ((dgx || dgy) && inb(hx+dgx, hy+dgy)) {
+      px = hx+dgx; py = hy+dgy;
+      psxi = Math.max(0, Math.min(SUBN-1, Math.floor((h.point.x - px*CS)/SS)));
+      psyi = Math.max(0, Math.min(SUBN-1, Math.floor((-h.point.z - py*CS)/SS)));
+    }
+  }
+  return { hit:{x:hx,y:hy,sxi:hsxi,syi:hsyi}, place:{x:px,y:py,sxi:psxi,syi:psyi}, dist:h.distance };
+}
+// translucent yellow box around whatever the crosshair is currently looking at — reuses the
+// same gl.ghost mesh DoomBlocks used for its mouse-hover preview, just driven by the crosshair
+// raycast instead of the mouse position, and updated once per frame from the render loop.
+function updateCrosshairOutline() {
+  if (!gl.ready) return;
+  const t = crosshairPick();
+  gl.curTarget = t;
+  if (!gl.ghost) return;
+  if (!t || menuOpen) { gl.ghost.visible = false; return; }
+  const c = grid[gi(t.hit.x, t.hit.y)];
+  const ceil = ceilUnits()*HU;
+  gl.ghost.visible = true;
+  const sub = (tool === 'terrain' && terraSub) || (tool === 'ceil' && ceilSub);
+  if (sub) {
+    gl.ghost.scale.set(SS/CS, 1, SS/CS);
+    const wx = t.hit.x*CS + t.hit.sxi*SS + SS/2, wy = t.hit.y*CS + t.hit.syi*SS + SS/2;
+    gl.ghost.position.set(wx, colTop(c, ceil)+4, -wy);
+  } else {
+    gl.ghost.scale.set(1, 1, 1);
+    gl.ghost.position.set(t.hit.x*CS+CS/2, colTop(c, ceil)+4, -(t.hit.y*CS+CS/2));
+  }
+}
+// left click: break. Terrain/Ceiling lower/raise right where you're looking; everything else
+// uses the same generic removal cascade DoomBlocks' right-click always used (teleporter pair ->
+// thing -> structure -> pad paint -> one step of terrain).
+function doBreak(t) {
+  if (tool === 'terrain') { terraDir = 'lower'; applyTool(t.hit.x, t.hit.y, t.hit.sxi, t.hit.syi); }
+  else if (tool === 'ceil') { ceilDir = 'raise'; applyTool(t.hit.x, t.hit.y, t.hit.sxi, t.hit.syi); }
+  else smartRemove(t.hit.x, t.hit.y);
+}
+// right click: place/build, using whichever tool is on the equipped hotbar slot. Terrain/Ceiling
+// always build (raise terrain / lower ceiling); everything else is applyTool's normal effect.
+function doPlace(t) {
+  if (tool === 'terrain') terraDir = 'raise';
+  else if (tool === 'ceil') ceilDir = 'lower';
+  applyTool(t.place.x, t.place.y, t.place.sxi, t.place.syi);
+}
+// scroll wheel: cycle the material/type for whichever hotbar slot is equipped (mirrors clicking
+// through DoomBlocks' old sidebar dropdowns, just without needing to open one)
+function cycleMaterial(dir) {
+  if (tool === 'wpaint') { paintWall = (paintWall + dir + WALLMATS.length) % WALLMATS.length; $('wallSel').value = paintWall; }
+  else if (tool === 'paint') {
+    const opts = [...$('surfSel').options].map(o => +o.value);
+    let i = opts.indexOf(paintSurf); i = (i + dir + opts.length) % opts.length;
+    paintSurf = opts[i]; $('surfSel').value = paintSurf;
+  }
+  else if (tool === 'cpaint') { paintCeil = (paintCeil + dir + CEILMATS.length) % CEILMATS.length; $('ceilSel').value = paintCeil; }
+  else if (tool === 'door') { doorLock = (doorLock + dir + LOCKS.length) % LOCKS.length; $('lockSel').value = doorLock; }
+  else if (tool === 'thing') {
+    const opts = [...$('thingSel').options];
+    if (!opts.length) return;
+    let i = opts.findIndex(o => o.selected); i = (i + dir + opts.length) % opts.length;
+    $('thingSel').selectedIndex = i;
+  }
+  else return;
+  syncHotbar();
+}
+// escape-menu / pointer-lock plumbing
+let menuOpen = true;
+function toggleMenu(forceOpen) {
+  menuOpen = forceOpen !== undefined ? forceOpen : !menuOpen;
+  $('escMenu').classList.toggle('hidden', !menuOpen);
+  if (menuOpen) { walk.keys = {}; if (document.pointerLockElement) document.exitPointerLock(); }
+}
+$('playBtn').onclick = () => { toggleMenu(false); $('cv').requestPointerLock(); };
+function bindDoomcraft(cv) {
+  cv.addEventListener('contextmenu', e => e.preventDefault());
+  cv.addEventListener('mousedown', e => {
+    if (menuOpen || document.pointerLockElement !== cv) return;
+    const t = gl.curTarget;
+    if (!t) return;
+    if (e.button === 0) doBreak(t);
+    else if (e.button === 2) doPlace(t);
+  });
+  cv.addEventListener('wheel', e => {
+    if (menuOpen) return;
+    e.preventDefault();
+    cycleMaterial(e.deltaY > 0 ? 1 : -1);
+  }, { passive:false });
+  cv.addEventListener('click', () => { if (!menuOpen) cv.requestPointerLock(); });
+  document.addEventListener('pointerlockchange', () => {
+    if (!menuOpen && document.pointerLockElement !== cv) toggleMenu(true);   // Esc/browser released the lock
+  });
+}
+
+// ================= walk mode: first-person preview =================
+const walk = { on:false, x:0, z:0, feet:0, vy:0, yaw:0, pitch:0, keys:{}, doors:{}, tpGuard:false,
+  fly:false, noclip:false };   // Fly: free vertical movement, still blocked by walls/doors.
+                                // Noclip: free movement through everything, incl. walls/doors.
+function wCeil() { return ceilUnits()*HU; }
+function cellAt(px, pz) {
+  const cx = Math.floor(px/CS), cy = Math.floor(-pz/CS);
+  return inb(cx, cy) ? { cx, cy, key: cx+','+cy, c: grid[gi(cx, cy)] } : null;
+}
+function wTop(c) { return Math.min(c.h*HU, wCeil()); }
+function passable(px, pz) {
+  const cell = cellAt(px, pz);
+  if (!cell) return false;
+  const c = cell.c;
+  if (c.wall || c.exit) return false;
+  if (c.door) {
+    const d = walk.doors[cell.key];
+    return !!d && d.frac > 0.85 && wTop(c) - walk.feet <= 24;
+  }
+  const top = wTop(c);
+  return (top - walk.feet <= 24) && (wCeil() - top >= 56);
+}
+// Fly still respects walls and closed doors, but skips the step-height/headroom checks that
+// `passable` enforces for walking — otherwise flying more than 24 units above a floor would
+// block ALL horizontal movement, since normal movement treats "too high above the floor" the
+// same as "blocked."
+function flyPassable(px, pz) {
+  const cell = cellAt(px, pz);
+  if (!cell) return false;
+  const c = cell.c;
+  if (c.wall || c.exit) return false;
+  if (c.door) {
+    const d = walk.doors[cell.key];
+    return !!d && d.frac > 0.85;
+  }
+  return true;
+}
+function groundAt(px, pz) {
+  let g = 0;
+  for (const [ox, oz] of [[-15,-15],[15,-15],[-15,15],[15,15]]) {
+    const cell = cellAt(px+ox, pz+oz);
+    if (cell && !cell.c.wall && !cell.c.exit) g = Math.max(g, wTop(cell.c));
+  }
+  return g;
+}
+// Doomcraft has no separate "orbit" view to switch out of — it's first-person from the moment
+// the 3D view is ready, spawning at the Player 1 Start (or map center if there isn't one yet).
+// Starts in Fly mode: a builder shouldn't have to fight gravity to reach where they're building.
+function startDoomcraft() {
+  if (!gl.ready) return;
+  let sx = W*CS/2, sz = -D*CS/2, sa = 90, found = false;
+  for (const t of [1,2,3,4,11]) {
+    if (found) break;
+    for (let y=0;y<D && !found;y++) for (let x=0;x<W;x++) {
+      const c = grid[gi(x,y)];
+      if (c.thing === t) { sx = x*CS+CS/2; sz = -(y*CS+CS/2); sa = c.ang ?? 90; found = true; break; }
+    }
+  }
+  walk.on = true;
+  walk.x = sx; walk.z = sz;
+  const sc = cellAt(sx, sz);
+  walk.feet = (sc && !sc.c.wall && !sc.c.exit) ? wTop(sc.c) : 64;
+  walk.vy = 0; walk.yaw = (sa - 90) * Math.PI/180; walk.pitch = 0;
+  walk.keys = {}; walk.doors = {}; walk.tpGuard = true; walk.fly = true; walk.noclip = false;
+  gl.camera.rotation.set(0, 0, 0, 'YXZ');
+  rebuild();
+  makeSky();
+}
+function makeSky() {
+  const skyName = $('sky').value;
+  if (!skyName) return;
+  let mat = null;
+  try {
+    const t = iwad ? getWall(skyName) : null;
+    if (t) {
+      const tex = t.tex.clone();
+      tex.needsUpdate = true;
+      tex.repeat.set(4, 1);
+      mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide });
+    }
+  } catch (e) { console.warn('sky texture failed to decode, using a flat color instead', e); }
+  if (!mat) {
+    mat = new THREE.MeshBasicMaterial({ side: THREE.BackSide,
+      color: skyName === 'SKY3' ? 0x6a2a20 : skyName === 'SKY2' ? 0x4a4f5a : 0x6a5a4a });
+  }
+  // dome, not an open cylinder — looking straight up must still show sky
+  gl.sky = new THREE.Mesh(new THREE.SphereGeometry(5000, 24, 12, 0, Math.PI*2, 0, Math.PI*0.62), mat);
+  gl.scene.add(gl.sky);
+}
+function useAction() {
+  const fx = -Math.sin(walk.yaw), fz = -Math.cos(walk.yaw);
+  const cell = cellAt(walk.x + fx*52, walk.z + fz*52);
+  if (!cell) return;
+  if (cell.c.door) {
+    if (cell.c.lock) {   // preview has no inventory to check against — just flag the requirement
+      $('stMsg').textContent = '🔒 Locked — needs the ' + LOCKS[cell.c.lock][0] + ' key.';
+      return;
+    }
+    const d = walk.doors[cell.key] = walk.doors[cell.key] || { frac:0, state:'closed', hold:0 };
+    if (d.state === 'closed' || d.state === 'closing') d.state = 'opening';
+  } else if (cell.c.exit) {
+    $('stMsg').textContent = '► EXIT! The level would end here (and lead to the next one).';
+  }
+}
+function walkStep(dt) {
+  const CU = wCeil();
+  // animate doors
+  if (gl.doorGroup) {
+    const pc0 = cellAt(walk.x, walk.z);
+    for (const mesh of gl.doorGroup.children) {
+      const d = walk.doors[mesh.userData.doorKey];
+      if (!d) continue;
+      const occupied = pc0 && pc0.key === mesh.userData.doorKey;
+      if (d.state === 'opening') {
+        d.frac = Math.min(1, d.frac + dt*1.8);
+        if (d.frac === 1) { d.state = 'open'; d.hold = 4; }
+      } else if (d.state === 'open') {
+        if (occupied) d.hold = 4;
+        else { d.hold -= dt; if (d.hold <= 0) d.state = 'closing'; }
+      } else if (d.state === 'closing') {
+        if (occupied) d.state = 'opening';
+        else { d.frac = Math.max(0, d.frac - dt*1.8); if (d.frac === 0) d.state = 'closed'; }
+      }
+      const hgt = Math.max(0.02, 1 - d.frac);
+      mesh.scale.y = hgt;
+      mesh.position.y = d.frac*CU + hgt*CU/2;
+    }
+  }
+  // movement (axis-separated collision, radius 15, step-up 24)
+  const sp = ((walk.keys.ShiftLeft || walk.keys.ShiftRight) ? 420 : 260) * dt;
+  const fx = -Math.sin(walk.yaw), fz = -Math.cos(walk.yaw);
+  const rx = -fz, rz = fx;
+  let dx = 0, dz = 0;
+  if (walk.keys.KeyW || walk.keys.ArrowUp)    { dx += fx*sp; dz += fz*sp; }
+  if (walk.keys.KeyS || walk.keys.ArrowDown)  { dx -= fx*sp; dz -= fz*sp; }
+  if (walk.keys.KeyA || walk.keys.ArrowLeft)  { dx -= rx*sp; dz -= rz*sp; }
+  if (walk.keys.KeyD || walk.keys.ArrowRight) { dx += rx*sp; dz += rz*sp; }
+  const R = 15;
+  const passFn = walk.noclip ? (() => true) : walk.fly ? flyPassable : passable;
+  const fits = (px, pz) => passFn(px-R, pz-R) && passFn(px+R, pz-R) && passFn(px-R, pz+R) && passFn(px+R, pz+R);
+  if (dx && fits(walk.x + dx, walk.z)) walk.x += dx;
+  if (dz && fits(walk.x, walk.z + dz)) walk.z += dz;
+  // gravity & step-up (suspended in Fly/Noclip — Space/C move freely up/down instead)
+  if (walk.fly || walk.noclip) {
+    const vsp = ((walk.keys.ShiftLeft || walk.keys.ShiftRight) ? 420 : 260) * dt;
+    if (walk.keys.Space) walk.feet += vsp;
+    if (walk.keys.KeyC) walk.feet -= vsp;
+    if (!walk.noclip) walk.feet = Math.max(0, walk.feet);   // Fly still can't sink below the world floor
+    walk.vy = 0;
+  } else {
+    const g = groundAt(walk.x, walk.z);
+    if (walk.feet < g) { walk.feet = g; walk.vy = 0; }
+    else if (walk.feet > g) {
+      walk.vy -= 2400*dt;
+      walk.feet = Math.max(g, walk.feet + walk.vy*dt);
+      if (walk.feet === g) walk.vy = 0;
+    }
+  }
+  // teleporters fire when you step on the pad (not on arrival)
+  const pc = cellAt(walk.x, walk.z);
+  if (pc && isTp(pc.c.thing)) {
+    if (!walk.tpGuard) {
+      let best = null, bd = Infinity;
+      for (let y=0;y<D;y++) for (let x=0;x<W;x++) {
+        const o = grid[gi(x,y)];
+        if (o.thing !== pc.c.thing || (x === pc.cx && y === pc.cy)) continue;
+        const d2 = (x - pc.cx)**2 + (y - pc.cy)**2;
+        if (d2 < bd) { bd = d2; best = { x, y, o }; }
+      }
+      if (best) {
+        walk.x = best.x*CS + CS/2; walk.z = -(best.y*CS + CS/2);
+        walk.feet = wTop(best.o); walk.vy = 0;
+        walk.yaw = ((best.o.ang ?? 90) - 90) * Math.PI/180;
+        walk.tpGuard = true;
+      }
+    }
+  } else walk.tpGuard = false;
+  // camera
+  if (gl.camera) {
+    gl.camera.position.set(walk.x, walk.feet + 41, walk.z);
+    gl.camera.rotation.set(walk.pitch, walk.yaw, 0, 'YXZ');   // no roll — level horizon
+  }
+  if (gl.sky) gl.sky.position.set(walk.x, walk.feet + 41, walk.z);
+}
+document.addEventListener('mousemove', e => {
+  if (menuOpen || document.pointerLockElement !== $('cv')) return;
+  walk.yaw -= e.movementX * 0.0022;
+  walk.pitch = Math.max(-1.5, Math.min(1.5, walk.pitch - e.movementY * 0.0022));
+});
+
+// ================= init =================
+syncHotbar();
+toggleMenu(true);   // start on the menu — also doubles as the required user gesture before
+                     // pointer lock can be requested when the player clicks Play
+window.addEventListener('load', () => {
+  if (window.THREE) initGL();
+  else $('noGL').style.display = 'flex';
+});
+// restore autosaved project from browser storage, else start with one starter level
+(function initMap(){
+  try {
+    const j = JSON.parse(localStorage.getItem(LS_KEY));
+    if (j && (j.levels || (j.grid && j.W && j.D))) { adoptProject(j); return; }
+  } catch {}
+  levels = [freshLevel()]; cur = 0;
+  applyLevelState(levels[0]);
+})();
+</script>
+</body>
+</html>

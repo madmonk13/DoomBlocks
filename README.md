@@ -20,6 +20,20 @@ and export a playable WAD. No installation: open the link above or the file in a
 The exported WAD has empty node lumps, so use a ZDoom-family port (GZDoom, Zandronum) which
 builds nodes automatically. For vanilla ports, run the WAD through a node builder like zdbsp first.
 
+## Doomcraft — first-person variant
+
+`doomcraft.html` is a separate, first-person, Minecraft-style variant of the same editor.
+It shares DoomBlocks' data model, compiler, and movement code, but replaces the orbit-camera
++ sidebar workflow with crosshair-based building: aim at a block, **left-click to break**,
+**right-click to place**. Tools live in a bottom hotbar (keys **1–9/0**, matching DoomBlocks'
+tool hotkeys), scroll the mouse wheel to cycle materials for the equipped tool, **E** to
+open doors/use switches, **Esc** to pause and access Save/Load/Export/Undo/New.
+
+It's a single grid (no multi-level UI) and always starts in first-person Fly mode — press
+**F** to toggle Fly, **N** for Noclip, same as Walk mode in DoomBlocks. It shares the same
+IndexedDB-stored IWAD (load it once in either tool), but autosaves to its own separate
+`doomcraft-autosave` key so it never overwrites DoomBlocks' in-progress work.
+
 ## Units — how big is everything?
 
 Everything is measured in Doom map units. The player is **56 tall** (eye level 41), **32 wide**,
